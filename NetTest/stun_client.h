@@ -5,8 +5,7 @@
 #ifndef _STUN_CLIENT_H_
 #define _STUN_CLIENT_H_
 
-#include <string>
-#pragma comment(lib, "ws2_32.lib")
+#include "includemanager.h"
 //#include <iostream>
 
 // 成功した場合 true を返し、外部IPとポートを outIP, outPort に格納する

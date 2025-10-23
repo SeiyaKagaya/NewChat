@@ -7,27 +7,8 @@
 
 #pragma once
 
-#include "RakNet/Source/RakPeerInterface.h"
-#include "RakNet/Source/RakNetTypes.h"
-#include "RakNet/Source/BitStream.h"
-#include "RakNet/Source/MessageIdentifiers.h"
-#include "RakNet/Source/RakSleep.h"
-#include "RakNet/Source/RakString.h"
-#include "RakNet/Source/NatTypeDetectionClient.h"
-
-#include <string>
-#include <vector>
-#include <mutex>
-#include <atomic>
-#include <thread>
-#include <windows.h>
-#include <map>
-#include <chrono>
-#include <optional>
+#include "includemanager.h"
 #include "room_manager.h"
-
-
-#pragma comment(lib, "RakNetDLL.lib")
 
 // 新しいパケットIDを追加
 enum GAME_MESSAGES

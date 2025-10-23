@@ -2,17 +2,8 @@
 // @file        room_manager.cpp
 // @brief       チャット周り（LAN優先接続対応）
 //------------------------------------------------------------
-#include <windows.h>
-#define popen _popen
-#define pclose _pclose
-
 #include "room_manager.h"
-#include <cstdio>
-#include <sstream>
-#include <iostream>
-#include "json.hpp"
-#include <memory>
-#include "ip_checker.h"
+
 
 using json = nlohmann::json;
 
@@ -138,7 +129,9 @@ bool RoomManager::CreateRoom(const std::string& roomName,
 
     std::string response;
     if (!HttpGet(url, response)) {
+        SetConsoleColor(RED);
         std::cerr << "[ERROR] HTTP GET 失敗\n";
+        SetConsoleColor(WHITE);
         return false;
     }
 
@@ -152,7 +145,9 @@ bool RoomManager::CreateRoom(const std::string& roomName,
         }
     }
     catch (const std::exception& e) {
+        SetConsoleColor(RED);
         std::cerr << "[ERROR] JSON parse 失敗: " << e.what() << std::endl;
+        SetConsoleColor(WHITE);
         return false;
     }
 
@@ -185,8 +180,10 @@ bool RoomManager::GetRoomList(std::map<std::string, json>& outRooms)
         return true;
     }
     catch (const std::exception& e) {
+        SetConsoleColor(RED);
         std::cerr << "部屋一覧取得エラー: " << e.what() << std::endl;
         std::cerr << "レスポンス: " << result << std::endl;
+        SetConsoleColor(WHITE);
     }
 
     return false;

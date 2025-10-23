@@ -5,7 +5,7 @@
 #ifndef _IP_TEST_H_
 #define _IP_TEST_H_
 
-#include <string>
+#include "includemanager.h"
 
 class IpChecker
 {

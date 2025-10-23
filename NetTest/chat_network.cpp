@@ -3,19 +3,8 @@
 // @brief       チャット周り（パンチループ＋TCP完遂報告＋LAN判定対応）
 //------------------------------------------------------------
 #include "chat_network.h"
-#include "json.hpp"
-
-#include <iostream>
-#include <thread>
-#include <chrono>
-#include <cstring>
-#include <vector>
-
-// Winsock
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include "room_manager.h"
 #include "main.h"
-#pragma comment(lib, "Ws2_32.lib")
 
 using json = nlohmann::json;
 
@@ -956,7 +945,7 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager,const std::strin
                 }
             }
 
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         }).detach();
 }

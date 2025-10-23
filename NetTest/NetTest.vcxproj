@@ -148,13 +148,16 @@
     <ClCompile Include="chat_network.cpp" />
     <ClCompile Include="ip_checker.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="nat_checker.cpp" />
     <ClCompile Include="room_manager.cpp" />
     <ClCompile Include="stun_client.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="chat_network.h" />
+    <ClInclude Include="includemanager.h" />
     <ClInclude Include="ip_checker.h" />
     <ClInclude Include="main.h" />
+    <ClInclude Include="nat_checker.h" />
     <ClInclude Include="room_manager.h" />
     <ClInclude Include="stun_client.h" />
   </ItemGroup>

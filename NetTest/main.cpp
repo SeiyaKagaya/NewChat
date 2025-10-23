@@ -3,19 +3,10 @@
 // @brief       チャット周り（LAN優先接続対応）
 //------------------------------------------------------------
 #include "main.h"
-#include "ip_checker.h"
-#include "room_manager.h"
 #include "stun_client.h"
-#include <iostream>
-#include <thread>
-#include <cstdlib>
-#include <map>
-#include <vector>
-#include <chrono>
-#include <windows.h>
-#include <string>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include "ip_checker.h"
+#include "nat_checker.h"
+
 
 
 
@@ -33,15 +24,18 @@ int main()
 
         std::string ip;
         unsigned short port;
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, 2);
+        
+        NATChecker checker;
+        std::string type = checker.detectNATType();
 
         if (GetExternalAddress(ip, port)) {
             std::cout << "あなたの外部IP: " << ip << std::endl;
             std::cout << "NATマッピングポート: " << port << std::endl;
         }
         else {
+            SetConsoleColor(RED);
             std::cout << "STUNサーバーへの接続に失敗しました。" << std::endl;
+            SetConsoleColor(WHITE);
         }
 
         std::string localIp = GetLocalIPAddress();
@@ -59,18 +53,21 @@ int main()
         //---------------------------------------
         std::string userName;
         while (true) {
-            SetConsoleTextAttribute(hConsole, 6);
+           
+            SetConsoleColor(YELLOW);
             std::cout << "あなたのユーザー名を入力してください: ";
-            SetConsoleTextAttribute(hConsole, 7);
+            SetConsoleColor(WHITE);
+
             std::getline(std::cin, userName);
 
             // 空白のみ or 空行 の場合は弾く
             std::string trimmed = userName;
             trimmed.erase(remove_if(trimmed.begin(), trimmed.end(), isspace), trimmed.end());
             if (trimmed.empty()) {
-                SetConsoleTextAttribute(hConsole, 4);
+           
+                SetConsoleColor(RED);
                 std::cout << "ユーザー名を入力してください。\n";
-                SetConsoleTextAttribute(hConsole, 7);
+                SetConsoleColor(WHITE);
                 continue;
             }
             break;
@@ -79,15 +76,18 @@ int main()
         //---------------------------------------
         // ホスト/クライアント選択
         //---------------------------------------
-        SetConsoleTextAttribute(hConsole, 6);
+
+        SetConsoleColor(YELLOW);
         std::cout << "\nあなたはホストですか？ (y/n) / 終了は x: ";
-        SetConsoleTextAttribute(hConsole, 7);
+        SetConsoleColor(WHITE);
         char choice;
         std::cin >> choice;
         std::cin.ignore();
 
         if (choice == 'x' || choice == 'X') {
+            SetConsoleColor(RED);
             std::cout << "終了します。\n";
+            SetConsoleColor(WHITE);
             break;
         }
 
@@ -112,8 +112,7 @@ int main()
 
 
         ChatLoop(chatNetwork);
-        SetConsoleTextAttribute(hConsole, 7);
-    }
+       }
 
     return 0;
 }
@@ -130,15 +129,14 @@ bool CheckServerIP()
 
     if (result == "NONE") {
         
-        //表示物色変更
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, 4);
+        SetConsoleColor(RED);
         std::cout << "? サーバーにアクセスできませんでした。\n";
-        SetConsoleTextAttribute(hConsole, 7);
+        SetConsoleColor(WHITE);
         return false;
     }
-
+    SetConsoleColor(GREEN);
     std::cout << "判定結果: " << result << std::endl;
+    SetConsoleColor(WHITE);
     return true;
 }
 
@@ -147,34 +145,31 @@ bool CheckServerIP()
 //----------------------------------------------
 bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, unsigned short natPort, const std::string& userName, const std::string& youExternalIp)
 {
-    //表示物色変更
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    SetConsoleTextAttribute(hConsole, 6);
 
 
     std::string roomName;
+    SetConsoleColor(YELLOW);
     std::cout << "部屋の名前を入力してください (キャンセルは x): ";
-    SetConsoleTextAttribute(hConsole, 7);
+    SetConsoleColor(WHITE);
     std::getline(std::cin, roomName);
 
     if (roomName == "x" || roomName == "X") return false;
 
     int maxPlayers = 0;
     while (true) {
-        SetConsoleTextAttribute(hConsole, 6);
+        SetConsoleColor(YELLOW);
         std::cout << "最大人数を入力してください (2から30): ";
+        SetConsoleColor(WHITE);
         std::string input;
 
-        SetConsoleTextAttribute(hConsole, 7);
         std::getline(std::cin, input);
 
         try { maxPlayers = std::stoi(input); }
         catch (...) { maxPlayers = 0; }
         if (maxPlayers >= 2 && maxPlayers <= 30) break;
-
-        SetConsoleTextAttribute(hConsole, 4);
+        SetConsoleColor(RED);
         std::cout << "無効な人数です。\n";
-        SetConsoleTextAttribute(hConsole, 7);
+        SetConsoleColor(WHITE);
     }
 
     IpChecker ipChecker;
@@ -184,20 +179,19 @@ bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& h
     // 部屋情報にユーザー名を追加して送信
     if (!roomManager.CreateRoom(roomName, hostIp, ipMode, maxPlayers, natPort, localIp, userName))
     {
-        SetConsoleTextAttribute(hConsole, 4);
+        SetConsoleColor(RED);
         std::cout << "部屋作成に失敗しました。\n";
-        SetConsoleTextAttribute(hConsole, 7);
+        SetConsoleColor(WHITE);
         return false;
     }
 
-    SetConsoleTextAttribute(hConsole, 3);
     std::cout << "部屋を作成しました！\n";
-    SetConsoleTextAttribute(hConsole, 7);
 
     if (!chatNetwork.Init(true, 12345, "", ipMode, roomManager, youExternalIp)) {
-        SetConsoleTextAttribute(hConsole, 4);
+    
+        SetConsoleColor(RED);
         std::cout << "チャット初期化失敗\n";
-        SetConsoleTextAttribute(hConsole, 7);
+        SetConsoleColor(WHITE);
         return false;
     }
 
@@ -214,14 +208,10 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
     std::string ipMode = ipChecker.CheckServerIP("210.131.217.223", "/check_ip.php", 12345);
 
 
-    //表示物色変更
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    SetConsoleTextAttribute(hConsole, 6);
-
     if (!chatNetwork.Init(false, 12345, "", ipMode, roomManager, youExternalIp)) {
-        SetConsoleTextAttribute(hConsole, 4);
+        SetConsoleColor(RED);
         std::cout << "初期化失敗\n";
-        SetConsoleTextAttribute(hConsole, 7);
+        SetConsoleColor(WHITE);
         return false;
     }
 
@@ -236,9 +226,7 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
 
         if (roomManager.GetRoomList(rooms) && !rooms.empty())
         {
-            SetConsoleTextAttribute(hConsole, 6);
             std::cout << "現在作成されている部屋一覧:\n";
-            SetConsoleTextAttribute(hConsole, 7);
 
             roomNames.clear();
             int idx = 1;
@@ -261,24 +249,23 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
         }
         else
         {
-            SetConsoleTextAttribute(hConsole, 4);
+            SetConsoleColor(RED);
             std::cout << "現在作成されている部屋はありません。\n";
-            SetConsoleTextAttribute(hConsole, 7);
+            SetConsoleColor(WHITE);
         }
 
-        SetConsoleTextAttribute(hConsole, 6);
+        SetConsoleColor(YELLOW);
         std::cout << "\n接続したい部屋の番号を入力してください / 更新 r / キャンセル x: ";
-        SetConsoleTextAttribute(hConsole, 7);
+        SetConsoleColor(WHITE);
 
         std::string input;
         std::getline(std::cin, input);
 
         // 💡 入力即チェック
         if (input == "x" || input == "X") {
-            SetConsoleTextAttribute(hConsole, 4);
+            SetConsoleColor(RED);
             std::cout << "メインメニューに戻ります。\n";
-            SetConsoleTextAttribute(hConsole, 7);
-
+            SetConsoleColor(WHITE);
             // 入力ストリームのエラー状態をクリアして安全に抜ける
             if (std::cin.fail()) std::cin.clear();
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -307,9 +294,10 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
 
             // 同一LAN判定
             if (IsSameLAN(myLocalIp, hostLocalIp)) {
-                SetConsoleTextAttribute(hConsole, 3);
+            
+                SetConsoleColor(RED);
                 std::cout << "\n同一LANが検出されました。ローカル接続モードを使用します。\n";
-                SetConsoleTextAttribute(hConsole, 7);
+                SetConsoleColor(WHITE);
                 hostIp = hostLocalIp;
 
                 // STUN済みNATポートではなくホストの待受ポートを使用
@@ -323,9 +311,7 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 hostNatPort = hostNatPort;
             }
 
-            SetConsoleTextAttribute(hConsole, 2);
             std::cout << "接続先IP: " << hostIp << " / port: " << hostNatPort << std::endl;
-            SetConsoleTextAttribute(hConsole, 7);
 
 
             std::string myExtIp;
@@ -342,20 +328,7 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 );
             }
 
-            //// サーバーに参加情報を送信
-            //if (!roomManager.JoinRoom(
-            //    roomNames[selectedRoom - 1], // 部屋名
-            //    userName,                    // 自分のユーザー名
-            //    myExtIp,                     // 外部IP
-            //    myExtPort,                   // 外部ポート
-            //    myLocalIp,                    // ローカルIP
-            //    12345                        // ローカルポート
-            //)) {
-            //    SetConsoleTextAttribute(hConsole, 4);
-            //    std::cout << "部屋への参加に失敗しました。\n";
-            //    SetConsoleTextAttribute(hConsole, 7);
-            //    continue; // ループに戻る
-            //}
+
 
 
 
@@ -366,15 +339,13 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 userName
             ))
             {
-                SetConsoleTextAttribute(hConsole, 3);
+                SetConsoleColor(RED);
                 std::cout << "リレー送信失敗\n";
-                SetConsoleTextAttribute(hConsole, 7);
+                SetConsoleColor(WHITE);
             }
             else
             {
-                SetConsoleTextAttribute(hConsole, 2);
                 std::cout << "リレー送信成功\n";
-                SetConsoleTextAttribute(hConsole, 7);
             }
             
 
@@ -387,24 +358,21 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
             //パンチ開始(Client→ホスト)
             if (chatNetwork.ConnectToHost(hostIp, ipMode, hostNatPort)) 
             {
-                SetConsoleTextAttribute(hConsole, 3);
                 std::cout << "ホストに接続試行中...\n";
-                SetConsoleTextAttribute(hConsole, 7);
                 return true;
             }
             else {
-                SetConsoleTextAttribute(hConsole, 4);
+                SetConsoleColor(RED);
                 std::cout << "接続に失敗しました。\n";
-                SetConsoleTextAttribute(hConsole, 7);
-
+                SetConsoleColor(WHITE);
                 std::this_thread::sleep_for(std::chrono::seconds(2));
             }
         }
         else
         {
-            SetConsoleTextAttribute(hConsole, 4);
+            SetConsoleColor(RED);
             std::cout << "無効な番号です。\n";
-            SetConsoleTextAttribute(hConsole, 7);
+            SetConsoleColor(WHITE);
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
@@ -416,14 +384,9 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
 void ChatLoop(ChatNetwork& chatNetwork)
 {
 
-    //表示物色変更
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    SetConsoleTextAttribute(hConsole, 3);
-
     std::thread recvThread(&ChatNetwork::ReceiveLoop, &chatNetwork);
 
     std::cout << "チャット開設作業開始。終了するには x を入力してください。\n";
-    SetConsoleTextAttribute(hConsole, 7);
     while (true)
     {
         std::string inputMessage;
@@ -438,9 +401,9 @@ void ChatLoop(ChatNetwork& chatNetwork)
         {
             if (inputMessage == "x" || inputMessage == "X")
             {
-                SetConsoleTextAttribute(hConsole, 4);
+                SetConsoleColor(RED);
                 std::cout << "チャットを終了します。\n";
-                SetConsoleTextAttribute(hConsole, 7);
+                SetConsoleColor(WHITE);
 
                 // 退出通知を送信
                 if (chatNetwork.IsHost()) {
@@ -464,9 +427,6 @@ void ChatLoop(ChatNetwork& chatNetwork)
             auto lastOpt = chatNetwork.GetLastHeartbeatOpt(chatNetwork.GetMyHostAddress());
             if (lastOpt && std::chrono::duration_cast<std::chrono::seconds>(now - *lastOpt) > std::chrono::seconds(10))
             {
-                SetConsoleTextAttribute(hConsole, 4);
-                //std::cout << "ホストの応答がありません。最初に戻ります。\n";
-                SetConsoleTextAttribute(hConsole, 7);
                 chatNetwork.Stop();
                 break;
             }

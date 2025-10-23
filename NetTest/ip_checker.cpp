@@ -3,12 +3,6 @@
 // @brief       Networkプロトコルチェッカー
 //------------------------------------------------------------
 #include "ip_checker.h"
-#include <windows.h>
-#include <winhttp.h>
-#include <string>
-#include <iostream>
-
-#pragma comment(lib, "winhttp.lib")
 
 //----------------------------------------------
 // コンストラクタ

@@ -4,6 +4,9 @@
 //------------------------------------------------------------
 #ifndef _MAIN_H_
 #define _MAIN_H_
+
+#include "includemanager.h"
+
 #include "chat_network.h"
 
 

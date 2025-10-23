@@ -5,14 +5,7 @@
 #ifndef _ROOM_MANAGER_H_
 #define _ROOM_MANAGER_H_
 
-#include <string>
-#include <vector>
-#include <map>
-#include "json.hpp" // nlohmann::json
-
-#include <windows.h>
-#include <winhttp.h>
-#include <string>
+#include "includemanager.h"
 
 
 

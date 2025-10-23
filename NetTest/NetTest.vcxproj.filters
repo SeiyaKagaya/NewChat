@@ -30,6 +30,9 @@
     <ClCompile Include="stun_client.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="nat_checker.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="chat_network.h">
@@ -45,6 +48,12 @@
       <Filter>ソース ファイル</Filter>
     </ClInclude>
     <ClInclude Include="main.h">
+      <Filter>ソース ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="includemanager.h">
+      <Filter>ソース ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="nat_checker.h">
       <Filter>ソース ファイル</Filter>
     </ClInclude>
   </ItemGroup>
