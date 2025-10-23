@@ -161,7 +161,7 @@ void RoomManager::StartRelayListener(const std::string& roomName, std::function<
                 SetConsoleColor(WHITE);
             }
         }
-        }).detach();
+    }).detach();
 }
 //----------------------------------------------
 // WinHTTP GET

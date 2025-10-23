@@ -56,40 +56,77 @@ bool RoomManager::RelayClientInfo(const std::string& roomName, const std::string
 std::optional<PendingClientInfo> RoomManager::GetPendingClientInfo(const std::string& hostExternalIp)
 {
     std::ostringstream oss;
-    oss << serverUrl << "/room_manager.php?action=get_pending_client"
-        << "&hostExternalIp=" << hostExternalIp;
-
+    oss << serverUrl << "/room_manager.php?action=relay_recv"
+        << "&host_ip=" << hostExternalIp; // ★ room → host_ip に変更
 
     std::string response;
-    if (!HttpGet(oss.str(), response)) {
- printf("[Relay] HTTP GET failed (get_pending_client).リレー送信失敗\n");
-        std::cout << "[Relay] raw response: " << response << "\n"; // 追加        return std::nullopt;
+    if (!HttpGet(oss.str(), response) || response.empty() || response == "[]") {
+        return std::nullopt;
     }
 
     try {
-        auto j = json::parse(response);
-        if (j.contains("success") && j["success"].get<bool>() && j.contains("client")) {
-            auto c = j["client"];
-            PendingClientInfo info;
-            info.external_ip = c["external_ip"].get<std::string>();
-            info.external_port = c["external_port"].get<int>();
-            info.local_ip = c["local_ip"].get<std::string>();
-            info.local_port = c["local_port"].get<int>();
-            info.client_name = c["client_name"].get<std::string>();
+        auto clients = nlohmann::json::parse(response);
 
-            printf("[Relay] 受信したっぽい\n");
-            return info;
-        }
-        
-        
+        if (!clients.is_array() || clients.empty())
+            return std::nullopt;
+
+        // 一つ目のクライアントデータを返す
+        auto c = clients.front();
+
+        PendingClientInfo info;
+        info.external_ip = c["external_ip"].get<std::string>();
+        info.external_port = c["external_port"].get<int>();
+        info.local_ip = c["local_ip"].get<std::string>();
+        info.local_port = c["local_port"].get<int>();
+        info.client_name = c["user"].get<std::string>();
+
+        std::cout << "[Relay] クライアント接続: " << info.client_name
+            << " (" << info.external_ip << ":" << info.external_port << ")\n";
+
+        return info;
     }
-    catch (...) {
-        printf("[Relay] Invalid JSON from server.\n");
+    catch (const std::exception& e) {
+        std::cerr << "[Relay] JSON parse error: " << e.what() << std::endl;
     }
 
     return std::nullopt;
-
 }
+
+//std::optional<nlohmann::json> RoomManager::GetPendingRelayClients(const std::string& roomName)
+//{
+//    std::string relayUrl = serverUrl + "/room_manager.php?action=relay_recv"
+//        + "&room=" + UrlEncode(CP932ToUTF8(roomName));
+//
+//    std::string response;
+//    if (!HttpGet(relayUrl, response) || response.empty() || response == "[]") {
+//        return std::nullopt; // データなし
+//    }
+//
+//    try {
+//        auto clients = nlohmann::json::parse(response);
+//        if (!clients.is_array() || clients.empty())
+//            return std::nullopt;
+//
+//        // ログ出力（Bタイプ準拠）
+//        std::cout << "\n[Relay受信][クライアント参加通知]\n";
+//        for (auto& c : clients) {
+//            std::cout << "ユーザー: " << c["user"] << std::endl;
+//            std::cout << "外部IP: " << c["external_ip"] << ":" << c["external_port"] << std::endl;
+//            std::cout << "ローカルIP: " << c["local_ip"] << ":" << c["local_port"] << std::endl;
+//            std::cout << "同一LAN: " << c["same_lan"] << std::endl;
+//        }
+//
+//        return clients; // 呼び出し側が処理を行う
+//    }
+//    catch (const std::exception& e) {
+//        SetConsoleColor(RED);
+//        std::cerr << "[Relay受信JSONパース失敗] " << e.what() << std::endl;
+//        SetConsoleColor(WHITE);
+//    }
+//
+//    return std::nullopt;
+//}
+
 
 
 //----------------------------------------------
