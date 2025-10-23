@@ -1,0 +1,565 @@
+﻿//------------------------------------------------------------
+// @file        main.cpp
+// @brief       チャット周り（LAN優先接続対応）
+//------------------------------------------------------------
+#include "main.h"
+#include "ip_checker.h"
+#include "room_manager.h"
+#include "stun_client.h"
+#include <iostream>
+#include <thread>
+#include <cstdlib>
+#include <map>
+#include <vector>
+#include <chrono>
+#include <windows.h>
+#include <string>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+
+
+//----------------------------------------------
+// メイン
+//----------------------------------------------
+int main()
+{
+    SetConsoleOutputCP(932);
+    SetConsoleCP(932);
+
+    while (true)
+    {
+        system("cls");
+
+        std::string ip;
+        unsigned short port;
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 2);
+
+        if (GetExternalAddress(ip, port)) {
+            std::cout << "あなたの外部IP: " << ip << std::endl;
+            std::cout << "NATマッピングポート: " << port << std::endl;
+        }
+        else {
+            std::cout << "STUNサーバーへの接続に失敗しました。" << std::endl;
+        }
+
+        std::string localIp = GetLocalIPAddress();
+        std::cout << "あなたのローカルIP: " << localIp << std::endl;
+
+        if (!CheckServerIP()) return 1;
+
+        ChatNetwork chatNetwork;
+        RoomManager roomManager("http://210.131.217.223:12345");
+        std::string hostIp;
+        bool isHost = false;
+
+        //---------------------------------------
+        // ユーザー名入力（空白・空行禁止）
+        //---------------------------------------
+        std::string userName;
+        while (true) {
+            SetConsoleTextAttribute(hConsole, 6);
+            std::cout << "あなたのユーザー名を入力してください: ";
+            SetConsoleTextAttribute(hConsole, 7);
+            std::getline(std::cin, userName);
+
+            // 空白のみ or 空行 の場合は弾く
+            std::string trimmed = userName;
+            trimmed.erase(remove_if(trimmed.begin(), trimmed.end(), isspace), trimmed.end());
+            if (trimmed.empty()) {
+                SetConsoleTextAttribute(hConsole, 4);
+                std::cout << "ユーザー名を入力してください。\n";
+                SetConsoleTextAttribute(hConsole, 7);
+                continue;
+            }
+            break;
+        }
+
+        //---------------------------------------
+        // ホスト/クライアント選択
+        //---------------------------------------
+        SetConsoleTextAttribute(hConsole, 6);
+        std::cout << "\nあなたはホストですか？ (y/n) / 終了は x: ";
+        SetConsoleTextAttribute(hConsole, 7);
+        char choice;
+        std::cin >> choice;
+        std::cin.ignore();
+
+        if (choice == 'x' || choice == 'X') {
+            std::cout << "終了します。\n";
+            break;
+        }
+
+        isHost = (choice == 'y' || choice == 'Y');
+
+        bool connected = false;
+        chatNetwork.SetUserName(userName);
+
+        if (isHost) {
+            connected = HostFlow(chatNetwork, roomManager, hostIp, port, userName, ip);
+        }
+        else {
+            connected = ClientFlow(chatNetwork, roomManager, hostIp, userName, ip);
+        }
+
+        if (!connected) {
+            // 念のためネットワークを安全に止めてからループ継続
+            chatNetwork.Stop();
+            continue;
+        }
+
+
+
+        ChatLoop(chatNetwork);
+        SetConsoleTextAttribute(hConsole, 7);
+    }
+
+    return 0;
+}
+
+
+//----------------------------------------------
+// サーバー接続チェック
+//----------------------------------------------
+bool CheckServerIP()
+{
+    IpChecker ipChecker;
+    std::cout << "サーバーにアクセスして IPv4/IPv6 判定中..." << std::endl;
+    std::string result = ipChecker.CheckServerIP("210.131.217.223", "/check_ip.php", 12345);
+
+    if (result == "NONE") {
+        
+        //表示物色変更
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 4);
+        std::cout << "? サーバーにアクセスできませんでした。\n";
+        SetConsoleTextAttribute(hConsole, 7);
+        return false;
+    }
+
+    std::cout << "判定結果: " << result << std::endl;
+    return true;
+}
+
+//----------------------------------------------
+// ホスト側フロー
+//----------------------------------------------
+bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, unsigned short natPort, const std::string& userName, const std::string& youExternalIp)
+{
+    //表示物色変更
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(hConsole, 6);
+
+
+    std::string roomName;
+    std::cout << "部屋の名前を入力してください (キャンセルは x): ";
+    SetConsoleTextAttribute(hConsole, 7);
+    std::getline(std::cin, roomName);
+
+    if (roomName == "x" || roomName == "X") return false;
+
+    int maxPlayers = 0;
+    while (true) {
+        SetConsoleTextAttribute(hConsole, 6);
+        std::cout << "最大人数を入力してください (2から30): ";
+        std::string input;
+
+        SetConsoleTextAttribute(hConsole, 7);
+        std::getline(std::cin, input);
+
+        try { maxPlayers = std::stoi(input); }
+        catch (...) { maxPlayers = 0; }
+        if (maxPlayers >= 2 && maxPlayers <= 30) break;
+
+        SetConsoleTextAttribute(hConsole, 4);
+        std::cout << "無効な人数です。\n";
+        SetConsoleTextAttribute(hConsole, 7);
+    }
+
+    IpChecker ipChecker;
+    std::string ipMode = ipChecker.CheckServerIP("210.131.217.223", "/check_ip.php", 12345);
+    std::string localIp = GetLocalIPAddress();
+
+    // 部屋情報にユーザー名を追加して送信
+    if (!roomManager.CreateRoom(roomName, hostIp, ipMode, maxPlayers, natPort, localIp, userName))
+    {
+        SetConsoleTextAttribute(hConsole, 4);
+        std::cout << "部屋作成に失敗しました。\n";
+        SetConsoleTextAttribute(hConsole, 7);
+        return false;
+    }
+
+    SetConsoleTextAttribute(hConsole, 3);
+    std::cout << "部屋を作成しました！\n";
+    SetConsoleTextAttribute(hConsole, 7);
+
+    if (!chatNetwork.Init(true, 12345, "", ipMode, roomManager, youExternalIp)) {
+        SetConsoleTextAttribute(hConsole, 4);
+        std::cout << "チャット初期化失敗\n";
+        SetConsoleTextAttribute(hConsole, 7);
+        return false;
+    }
+
+    return true;
+}
+
+//----------------------------------------------
+// クライアント側フロー
+//----------------------------------------------
+bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, const std::string& userName, const std::string& youExternalIp)
+{
+
+    IpChecker ipChecker;
+    std::string ipMode = ipChecker.CheckServerIP("210.131.217.223", "/check_ip.php", 12345);
+
+
+    //表示物色変更
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(hConsole, 6);
+
+    if (!chatNetwork.Init(false, 12345, "", ipMode, roomManager, youExternalIp)) {
+        SetConsoleTextAttribute(hConsole, 4);
+        std::cout << "初期化失敗\n";
+        SetConsoleTextAttribute(hConsole, 7);
+        return false;
+    }
+
+    std::map<std::string, nlohmann::json> rooms;
+    std::vector<std::string> roomNames;
+    int selectedRoom = -1;
+    std::string myLocalIp = GetLocalIPAddress();
+
+    while (true)
+    {
+        system("cls");
+
+        if (roomManager.GetRoomList(rooms) && !rooms.empty())
+        {
+            SetConsoleTextAttribute(hConsole, 6);
+            std::cout << "現在作成されている部屋一覧:\n";
+            SetConsoleTextAttribute(hConsole, 7);
+
+            roomNames.clear();
+            int idx = 1;
+            for (auto& [name, info] : rooms)
+            {
+                std::string ip = info.value("host_ip", "不明");
+                std::string localIp = info.value("local_ip", "不明");
+                int natPort = info.value("nat_port", 0);
+                std::string hostName = info.value("host_name", "名無し"); // ←追加
+
+                std::cout << " [" << idx << "] " << UTF8ToCP932(name)
+                    << " (ホスト: " << UTF8ToCP932(hostName) << ")" // ←追加
+                    << " / 外部IP:" << ip
+                    << " / ローカルIP:" << localIp
+                    << " / port:" << natPort << "\n";
+
+                roomNames.push_back(name);
+                ++idx;
+            }
+        }
+        else
+        {
+            SetConsoleTextAttribute(hConsole, 4);
+            std::cout << "現在作成されている部屋はありません。\n";
+            SetConsoleTextAttribute(hConsole, 7);
+        }
+
+        SetConsoleTextAttribute(hConsole, 6);
+        std::cout << "\n接続したい部屋の番号を入力してください / 更新 r / キャンセル x: ";
+        SetConsoleTextAttribute(hConsole, 7);
+
+        std::string input;
+        std::getline(std::cin, input);
+
+        // 💡 入力即チェック
+        if (input == "x" || input == "X") {
+            SetConsoleTextAttribute(hConsole, 4);
+            std::cout << "メインメニューに戻ります。\n";
+            SetConsoleTextAttribute(hConsole, 7);
+
+            // 入力ストリームのエラー状態をクリアして安全に抜ける
+            if (std::cin.fail()) std::cin.clear();
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+            // chatNetworkを安全に停止してから抜ける
+            chatNetwork.Stop();
+
+            return false;
+        }
+
+        if (input == "r" || input == "R") continue;
+
+        int selectedRoom = -1;
+        try { selectedRoom = std::stoi(input); }
+        catch (...) { selectedRoom = -1; }
+
+        if (selectedRoom >= 1 && selectedRoom <= (int)roomNames.size())
+        {
+            auto& info = rooms[roomNames[selectedRoom - 1]];
+            std::string hostExtIp = info.value("host_ip", "");
+            std::string hostLocalIp = info.value("local_ip", "");
+            int hostNatPortInt = info.value("nat_port", 12345);
+            unsigned short hostNatPort = static_cast<unsigned short>(hostNatPortInt);
+
+            bool sameLAN = false; // ホストとの同一LAN判定はここで決める
+
+            // 同一LAN判定
+            if (IsSameLAN(myLocalIp, hostLocalIp)) {
+                SetConsoleTextAttribute(hConsole, 3);
+                std::cout << "\n同一LANが検出されました。ローカル接続モードを使用します。\n";
+                SetConsoleTextAttribute(hConsole, 7);
+                hostIp = hostLocalIp;
+
+                // STUN済みNATポートではなくホストの待受ポートを使用
+                hostNatPort = 12345;
+
+                sameLAN = true;
+            }
+            else {
+                hostIp = hostExtIp;
+                // 外部接続の場合は NATマッピングポートを使用
+                hostNatPort = hostNatPort;
+            }
+
+            SetConsoleTextAttribute(hConsole, 2);
+            std::cout << "接続先IP: " << hostIp << " / port: " << hostNatPort << std::endl;
+            SetConsoleTextAttribute(hConsole, 7);
+
+
+            std::string myExtIp;
+            unsigned short myExtPort = 0;
+            if (GetExternalAddress(myExtIp, myExtPort)) {
+                
+                chatNetwork.SetPendingPunch(
+                    myExtIp,        // 外部IP
+                    myExtPort,      // 外部ポート
+                    myLocalIp,      // ローカルIP
+                    12345,          // ローカルポート（自分がBindしているポート）
+                    sameLAN,        // 同一LANかどうか
+                    userName        //ユーザーネーム
+                );
+            }
+
+            //// サーバーに参加情報を送信
+            //if (!roomManager.JoinRoom(
+            //    roomNames[selectedRoom - 1], // 部屋名
+            //    userName,                    // 自分のユーザー名
+            //    myExtIp,                     // 外部IP
+            //    myExtPort,                   // 外部ポート
+            //    myLocalIp,                    // ローカルIP
+            //    12345                        // ローカルポート
+            //)) {
+            //    SetConsoleTextAttribute(hConsole, 4);
+            //    std::cout << "部屋への参加に失敗しました。\n";
+            //    SetConsoleTextAttribute(hConsole, 7);
+            //    continue; // ループに戻る
+            //}
+
+
+
+            if (!roomManager.RelayClientInfo(
+                hostExtIp,
+                myExtIp, myExtPort,
+                myLocalIp, 12345,
+                userName
+            ))
+            {
+                SetConsoleTextAttribute(hConsole, 3);
+                std::cout << "リレー送信失敗\n";
+                SetConsoleTextAttribute(hConsole, 7);
+            }
+            else
+            {
+                SetConsoleTextAttribute(hConsole, 2);
+                std::cout << "リレー送信成功\n";
+                SetConsoleTextAttribute(hConsole, 7);
+            }
+            
+
+
+
+            // クライアントフロー内
+           // chatNetwork.StartClientRelayPoll(roomManager, roomNames[selectedRoom - 1], sameLAN);
+
+
+            //パンチ開始(Client→ホスト)
+            if (chatNetwork.ConnectToHost(hostIp, ipMode, hostNatPort)) 
+            {
+                SetConsoleTextAttribute(hConsole, 3);
+                std::cout << "ホストに接続試行中...\n";
+                SetConsoleTextAttribute(hConsole, 7);
+                return true;
+            }
+            else {
+                SetConsoleTextAttribute(hConsole, 4);
+                std::cout << "接続に失敗しました。\n";
+                SetConsoleTextAttribute(hConsole, 7);
+
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+            }
+        }
+        else
+        {
+            SetConsoleTextAttribute(hConsole, 4);
+            std::cout << "無効な番号です。\n";
+            SetConsoleTextAttribute(hConsole, 7);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+}
+
+//----------------------------------------------
+// チャットループ
+//----------------------------------------------
+void ChatLoop(ChatNetwork& chatNetwork)
+{
+
+    //表示物色変更
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(hConsole, 3);
+
+    std::thread recvThread(&ChatNetwork::ReceiveLoop, &chatNetwork);
+
+    std::cout << "チャット開設作業開始。終了するには x を入力してください。\n";
+    SetConsoleTextAttribute(hConsole, 7);
+    while (true)
+    {
+        std::string inputMessage;
+
+        if (chatNetwork.GetForceExit()) { // ★追加
+            //std::cout << "\n自動的に最初の画面に戻ります...\n";
+            break;
+        }
+
+
+        if (std::getline(std::cin, inputMessage) && !inputMessage.empty())
+        {
+            if (inputMessage == "x" || inputMessage == "X")
+            {
+                SetConsoleTextAttribute(hConsole, 4);
+                std::cout << "チャットを終了します。\n";
+                SetConsoleTextAttribute(hConsole, 7);
+
+                // 退出通知を送信
+                if (chatNetwork.IsHost()) {
+                    chatNetwork.BroadcastLeaveNotification(); // 新規関数
+                }
+                else {
+                    chatNetwork.SendLeaveNotification(); // 新規関数
+                }
+
+                chatNetwork.Stop();
+                break;
+            }
+            chatNetwork.SendMessage(inputMessage);
+        }
+
+
+        auto now = std::chrono::steady_clock::now();
+
+        if (!chatNetwork.IsHost())
+        {
+            auto lastOpt = chatNetwork.GetLastHeartbeatOpt(chatNetwork.GetMyHostAddress());
+            if (lastOpt && std::chrono::duration_cast<std::chrono::seconds>(now - *lastOpt) > std::chrono::seconds(10))
+            {
+                SetConsoleTextAttribute(hConsole, 4);
+                //std::cout << "ホストの応答がありません。最初に戻ります。\n";
+                SetConsoleTextAttribute(hConsole, 7);
+                chatNetwork.Stop();
+                break;
+            }
+        }
+        else
+        {
+            chatNetwork.CheckClientTimeouts();
+        }
+
+
+
+    }
+
+    if (recvThread.joinable())
+        recvThread.join();
+}
+
+//----------------------------------------------
+// UTF-8 → CP932 変換
+//----------------------------------------------
+std::string UTF8ToCP932(const std::string& utf8)
+{
+    int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (len == 0) return "";
+    std::wstring wstr(len, 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, wstr.data(), len);
+
+    len = WideCharToMultiByte(932, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len == 0) return "";
+    std::string s(len, 0);
+    WideCharToMultiByte(932, 0, wstr.c_str(), -1, s.data(), len, nullptr, nullptr);
+
+    if (!s.empty() && s.back() == '\0') s.pop_back();
+    return s;
+}
+
+//----------------------------------------------
+// ローカルIP取得
+//----------------------------------------------
+std::string GetLocalIPAddress()
+{
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return "unknown";
+
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
+        WSACleanup();
+        return "unknown";
+    }
+
+    addrinfo hints = {}, * res = nullptr;
+    hints.ai_family = AF_INET; // IPv4 のみ
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(hostname, nullptr, &hints, &res) != 0) {
+        WSACleanup();
+        return "unknown";
+    }
+
+    std::string localIp = "unknown";
+    for (addrinfo* ptr = res; ptr != nullptr; ptr = ptr->ai_next)
+    {
+        sockaddr_in* addr = reinterpret_cast<sockaddr_in*>(ptr->ai_addr);
+        char ip[INET_ADDRSTRLEN] = {};
+        inet_ntop(AF_INET, &(addr->sin_addr), ip, sizeof(ip));
+        if (strcmp(ip, "127.0.0.1") != 0) { // ループバックでないものを優先
+            localIp = ip;
+            break;
+        }
+    }
+
+    freeaddrinfo(res);
+    WSACleanup();
+    return localIp;
+}
+
+
+//----------------------------------------------
+// 同一LAN判定（サブネット先頭3オクテット比較）
+//----------------------------------------------
+bool IsSameLAN(const std::string& ip1, const std::string& ip2)
+{
+    if (ip1.empty() || ip2.empty()) return false;
+    int dotCount = 0;
+    size_t i = 0;
+    for (; i < ip1.size() && dotCount < 3; ++i)
+        if (ip1[i] == '.') ++dotCount;
+    std::string prefix1 = ip1.substr(0, i);
+
+    dotCount = 0;
+    size_t j = 0;
+    for (; j < ip2.size() && dotCount < 3; ++j)
+        if (ip2[j] == '.') ++dotCount;
+    std::string prefix2 = ip2.substr(0, j);
+
+    return prefix1 == prefix2;
+}

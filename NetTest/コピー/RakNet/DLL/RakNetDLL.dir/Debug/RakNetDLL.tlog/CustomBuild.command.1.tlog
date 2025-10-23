@@ -1,0 +1,10 @@
+^C:\USERS\STUDENT\DESKTOP\RAKNET-MASTER\LIB\DLL\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/student/Desktop/RakNet-master -BC:/Users/student/Desktop/RakNet-master/build --check-stamp-file C:/Users/student/Desktop/RakNet-master/build/Lib/DLL/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

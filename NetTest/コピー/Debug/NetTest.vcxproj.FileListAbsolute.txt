@@ -1,0 +1,4 @@
+C:\Users\student\Desktop\NetworkTest\NetTest\Debug\NetTest.exe
+C:\Users\seiya\Desktop\NetworkTest\NetTest\Debug\NetTest.exe
+C:\Users\seiya\Desktop\GlobalP2PChatRoom\NetTest\Debug\NetTest.exe
+C:\Users\seiya\Desktop\新生\NewChat\NetTest\コピー\Debug\NetTest.exe

@@ -1,0 +1,9 @@
+﻿  chat_session.cpp
+  ip_checker.cpp
+  main.cpp
+  nat_checker.cpp
+  room_manager.cpp
+  stun_client.cpp
+  udp_puncher.cpp
+  コードを生成中...
+  NetTest.vcxproj -> C:\Users\seiya\Desktop\新生\NewChat\NetTest\コピー\Debug\NetTest.exe

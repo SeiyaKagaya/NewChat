@@ -1,0 +1,3 @@
+C:\Users\student\Desktop\NetworkTest\NetTest\Release\NetTest.exe
+C:\Users\seiya\Desktop\NetworkTest\NetTest\Release\NetTest.exe
+C:\Users\seiya\Desktop\GlobalP2PChatRoom\NetTest\Release\NetTest.exe
