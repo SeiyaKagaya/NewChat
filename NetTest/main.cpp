@@ -330,24 +330,10 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
 
 
 
+            roomManager.RelayClientInfo(roomNames[selectedRoom - 1], userName,
+                myExtIp, myExtPort, myLocalIp, 12345, sameLAN);
 
 
-            if (!roomManager.RelayClientInfo(
-                hostExtIp,
-                myExtIp, myExtPort,
-                myLocalIp, 12345,
-                userName
-            ))
-            {
-                SetConsoleColor(RED);
-                std::cout << "リレー送信失敗\n";
-                SetConsoleColor(WHITE);
-            }
-            else
-            {
-                std::cout << "リレー送信成功\n";
-            }
-            
 
 
 

@@ -60,10 +60,13 @@ public:
  
     std::optional<PendingClientInfo> GetPendingClientInfo(const std::string& hostExternalIp);
 
-    bool RelayClientInfo(const std::string& hostExternalIp,
-        const std::string& externalIp, unsigned short externalPort,
-        const std::string& localIp, unsigned short localPort,
-        const std::string& clientName);
+    //bool RelayClientInfo(const std::string& hostExternalIp,
+    //    const std::string& externalIp, unsigned short externalPort,
+    //    const std::string& localIp, unsigned short localPort,
+    //    const std::string& clientName);
+
+
+    bool RelayClientInfo(const std::string& roomName, const std::string& userName, const std::string& externalIp, unsigned short externalPort, const std::string& localIp, unsigned short localPort, bool sameLan);
 
 private:
     std::string serverUrl; // ÉTÅ[ÉoÅ[ÇÃURLäiî[

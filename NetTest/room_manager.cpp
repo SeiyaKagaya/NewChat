@@ -27,38 +27,29 @@ std::wstring RoomManager::UTF8ToWString(const std::string& utf8)
     return wstr;
 }
 
-bool RoomManager::RelayClientInfo(const std::string& hostExternalIp,
-    const std::string& externalIp, unsigned short externalPort,
-    const std::string& localIp, unsigned short localPort,
-    const std::string& clientName)
+bool RoomManager::RelayClientInfo(const std::string& roomName, const std::string& userName, const std::string& externalIp, unsigned short externalPort, const std::string& localIp, unsigned short localPort, bool sameLan)
 {
-    // URL構築
-    std::string url = serverUrl + "/room_manager.php?action=relay_client_info"
-        + "&hostExternalIp=" + hostExternalIp
+    std::string url = serverUrl + "/room_manager.php?action=relay_send"
+        + "&room=" + UrlEncode(CP932ToUTF8(roomName))
+        + "&from=" + UrlEncode(CP932ToUTF8(userName))
         + "&external_ip=" + externalIp
         + "&external_port=" + std::to_string(externalPort)
         + "&local_ip=" + localIp
         + "&local_port=" + std::to_string(localPort)
-        + "&client_name=" + UrlEncode(clientName);
-
-
-
+        + "&same_lan=" + (sameLan ? "true" : "false");
 
     std::string response;
     if (!HttpGet(url, response)) {
-        std::cout << "[Relay] HTTP GET failed.\n";
+        SetConsoleColor(RED);
+        std::cerr << "[Relay送信失敗]" << std::endl;
+        SetConsoleColor(WHITE);
         return false;
     }
 
-    // サーバーからのレスポンス確認
-    if (response.find("success") != std::string::npos) {
-        std::cout << "[Relay] Client info sent to server.\n";
-        return true;
-    }
-
-    std::cout << "[Relay] Failed to send client info.\n";
-    std::cout << "Response: " << response << "\n"; // 念のためレスポンス出力
-    return false;
+    SetConsoleColor(GREEN);
+    std::cout << "[Relay送信完了] " << response << std::endl;
+    SetConsoleColor(WHITE);
+    return true;
 }
 
 
@@ -97,6 +88,7 @@ std::optional<PendingClientInfo> RoomManager::GetPendingClientInfo(const std::st
     }
 
     return std::nullopt;
+
 }
 
 

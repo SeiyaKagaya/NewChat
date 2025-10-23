@@ -3,7 +3,6 @@
 // @brief       チャット周り（パンチループ＋TCP完遂報告＋LAN判定対応）
 //------------------------------------------------------------
 #include "chat_network.h"
-#include "room_manager.h"
 #include "main.h"
 
 using json = nlohmann::json;
