@@ -54,6 +54,9 @@ bool RoomManager::RelayClientInfo(const std::string& hostExternalIp,
 
     SetConsoleColor(GREEN);
     std::cout << "[Relay送信完了] " << response << std::endl;
+
+    std::cout << "[Relay送信URL] " << url << std::endl;
+
     SetConsoleColor(WHITE);
     return true;
 }
@@ -62,12 +65,16 @@ bool RoomManager::RelayClientInfo(const std::string& hostExternalIp,
 
 std::optional<PendingClientInfo> RoomManager::GetPendingClientInfo(const std::string& hostExternalIp)
 {
-    std::ostringstream oss;
-    oss << serverUrl << "/room_manager.php?action=relay_recv"
-        << "&host_ip=" << hostExternalIp; // ★ room → host_ip に変更
+    std::string oss;
+    oss = serverUrl + "/room_manager.php?action=relay_recv"
+        + "&host_ip=" + hostExternalIp; // ★ room → host_ip に変更
+
+    std::cout << "[Relay受信URL] " << oss << std::endl;
+
+
 
     std::string response;
-    if (!HttpGet(oss.str(), response) || response.empty() || response == "[]") {
+    if (!HttpGet(oss, response) || response.empty() || response == "[]") {
         return std::nullopt;
     }
 
