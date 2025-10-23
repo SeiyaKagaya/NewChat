@@ -27,7 +27,7 @@ std::wstring RoomManager::UTF8ToWString(const std::string& utf8)
     return wstr;
 }
 
-bool RoomManager::RelayClientInfo(const std::string& hostExternalIp,
+bool RoomManager::RelayClientInfo(const std::string& hostExIP,
     const std::string& userName,
     const std::string& externalIp,
     unsigned short externalPort,
@@ -36,7 +36,7 @@ bool RoomManager::RelayClientInfo(const std::string& hostExternalIp,
     bool sameLan)
 {
     std::string url = serverUrl + "/room_manager.php?action=relay_send"
-        + "&host_ip=" + hostExternalIp      // š‚±‚±‚ğ•ÏX
+        + "&host_ip=" + hostExIP      // š‚±‚±‚ğ•ÏX
         + "&from=" + UrlEncode(CP932ToUTF8(userName))
         + "&external_ip=" + externalIp
         + "&external_port=" + std::to_string(externalPort)

@@ -298,7 +298,7 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 SetConsoleColor(RED);
                 std::cout << "\n同一LANが検出されました。ローカル接続モードを使用します。\n";
                 SetConsoleColor(WHITE);
-                hostIp = hostLocalIp;
+                hostIp = hostLocalIp;//ローカル化
 
                 // STUN済みNATポートではなくホストの待受ポートを使用
                 hostNatPort = 12345;
@@ -306,7 +306,7 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 sameLAN = true;
             }
             else {
-                hostIp = hostExtIp;
+                hostIp = hostExtIp;//外部のまま
                 // 外部接続の場合は NATマッピングポートを使用
                 hostNatPort = hostNatPort;
             }
@@ -329,8 +329,8 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
             }
 
 
-
-            roomManager.RelayClientInfo(roomNames[selectedRoom - 1], userName,
+            //リレーするときは外部のアドレスを使用
+            roomManager.RelayClientInfo(hostExtIp, userName,
                 myExtIp, myExtPort, myLocalIp, 12345, sameLAN);
 
 

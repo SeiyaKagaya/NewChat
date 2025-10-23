@@ -66,7 +66,7 @@ public:
     //    const std::string& clientName);
 
 
-    bool RelayClientInfo(const std::string& roomName, const std::string& userName, const std::string& externalIp, unsigned short externalPort, const std::string& localIp, unsigned short localPort, bool sameLan);
+    bool RelayClientInfo(const std::string& hostExIP, const std::string& userName, const std::string& externalIp, unsigned short externalPort, const std::string& localIp, unsigned short localPort, bool sameLan);
 
 private:
     std::string serverUrl; // ÉTÅ[ÉoÅ[ÇÃURLäiî[
