@@ -27,10 +27,16 @@ std::wstring RoomManager::UTF8ToWString(const std::string& utf8)
     return wstr;
 }
 
-bool RoomManager::RelayClientInfo(const std::string& roomName, const std::string& userName, const std::string& externalIp, unsigned short externalPort, const std::string& localIp, unsigned short localPort, bool sameLan)
+bool RoomManager::RelayClientInfo(const std::string& hostExternalIp,
+    const std::string& userName,
+    const std::string& externalIp,
+    unsigned short externalPort,
+    const std::string& localIp,
+    unsigned short localPort,
+    bool sameLan)
 {
     std::string url = serverUrl + "/room_manager.php?action=relay_send"
-        + "&room=" + UrlEncode(CP932ToUTF8(roomName))
+        + "&host_ip=" + hostExternalIp      // ÅöÇ±Ç±ÇïœçX
         + "&from=" + UrlEncode(CP932ToUTF8(userName))
         + "&external_ip=" + externalIp
         + "&external_port=" + std::to_string(externalPort)
@@ -51,6 +57,7 @@ bool RoomManager::RelayClientInfo(const std::string& roomName, const std::string
     SetConsoleColor(WHITE);
     return true;
 }
+
 
 
 std::optional<PendingClientInfo> RoomManager::GetPendingClientInfo(const std::string& hostExternalIp)
