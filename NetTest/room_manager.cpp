@@ -69,7 +69,7 @@ std::optional<PendingClientInfo> RoomManager::GetPendingClientInfo(const std::st
     oss = serverUrl + "/room_manager.php?action=relay_recv"
         + "&host_ip=" + hostExternalIp; // ★ room → host_ip に変更
 
-    std::cout << "[Relay受信URL] " << oss << std::endl;
+    //std::cout << "[Relay受信URL] " << oss << std::endl;
 
 
 
@@ -94,9 +94,10 @@ std::optional<PendingClientInfo> RoomManager::GetPendingClientInfo(const std::st
         info.local_port = c["local_port"].get<int>();
         info.client_name = c["user"].get<std::string>();
 
+        SetConsoleColor(GREEN);
         std::cout << "[Relay] クライアント接続: " << info.client_name
             << " (" << info.external_ip << ":" << info.external_port << ")\n";
-
+        SetConsoleColor(WHITE);
         return info;
     }
     catch (const std::exception& e) {
