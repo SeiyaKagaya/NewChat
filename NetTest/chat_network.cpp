@@ -235,94 +235,322 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
     return false;
 }
 
-void ChatNetwork::SendMessage(const std::string& message)
+//void ChatNetwork::SendMessage(const std::string& message)
+//{
+//    bool canSend = false;
+//    {
+//        std::lock_guard<std::mutex> lk(m_canSendMutex);
+//        if (!m_canSend)
+//        {
+//            canSend = false;
+//        }
+//        else
+//        {
+//            canSend = true;
+//        }
+//    }
+//
+//    if (!canSend)
+//    {
+//        SetConsoleColor(4);
+//        std::cout << "[SendMessage] まだ送信準備ができていません\n";
+//        ResetConsoleColor();
+//        return;
+//    }
+//
+//    if (m_isHost)
+//    {
+//        std::vector<RakNet::SystemAddress> clientAddresses;
+//        {
+//            std::lock_guard<std::mutex> lock(m_clientsMutex);
+//            if (m_clients.empty())
+//            {
+//                SetConsoleColor(4);
+//                std::cout << "[SendMessage] クライアントがまだ接続されていません\n";
+//                ResetConsoleColor();
+//                return;
+//            }
+//
+//            // 送信対象のクライアントアドレスをコピー
+//            for (auto& c : m_clients)
+//                clientAddresses.push_back(c.address);
+//        }
+//
+//        // ホスト→クライアント送信時：ホスト名を付けて送信
+//        std::string senderName = m_userName.empty() ? "ホスト" : m_userName;
+//        std::string payload = senderName + "::" + message;
+//
+//        RakNet::BitStream bs;
+//        bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
+//
+//        unsigned int payloadLen = static_cast<unsigned int>(payload.size());
+//        bs.Write(payloadLen);
+//        if (payloadLen > 0) bs.Write(payload.c_str(), payloadLen);
+//
+//        for (auto& addr : clientAddresses)
+//        {
+//            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, addr, false);
+//        }
+//    }
+//    else
+//    {
+//        std::string senderName = m_userName.empty() ? "匿名" : m_userName;
+//        std::string payload = senderName + "::" + message;
+//
+//        RakNet::BitStream bs;
+//        bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
+//
+//        unsigned int len = static_cast<unsigned int>(payload.size());
+//        bs.Write(len);
+//        if (len > 0) bs.Write(payload.c_str(), len);
+//
+//        if (m_peer->NumberOfConnections() > 0)
+//            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, m_peer->GetSystemAddressFromIndex(0), false);
+//        else
+//        {
+//            SetConsoleColor(4);
+//            std::cout << "[SendMessage] 接続先ホストが存在しません\n";
+//            ResetConsoleColor();
+//        }
+//    }
+//}
+
+
+
+void ChatNetwork::ReceiveLoop()
 {
-
-    /*bool canSend = false;
+    while (m_running)
     {
-        std::lock_guard<std::mutex> lk(m_canSendMutex);
-        canSend = m_canSend;
-    }*/
-
-    bool canSend = false;
-    {
-        std::lock_guard<std::mutex> lk(m_canSendMutex);
-        if (!m_canSend)
+        for (RakNet::Packet* packet = m_peer->Receive(); packet; m_peer->DeallocatePacket(packet), packet = m_peer->Receive())
         {
-            canSend = false;
-        }
-        else
-        {
-            canSend = true;
-        }
-    }
-
-    if (!canSend)
-    {
-        SetConsoleColor(4);
-        std::cout << "[SendMessage] まだ送信準備ができていません\n";
-        ResetConsoleColor();
-        return;
-    }
-
-    if (m_isHost)
-    {
-        std::vector<RakNet::SystemAddress> clientAddresses;
-        {
-            std::lock_guard<std::mutex> lock(m_clientsMutex);
-            if (m_clients.empty())
+            switch (packet->data[0])
             {
-                SetConsoleColor(4);
-                std::cout << "[SendMessage] クライアントがまだ接続されていません\n";
+            case ID_NEW_INCOMING_CONNECTION:
+
+                SetConsoleColor(6);
+                std::cout << "新規接続: " << packet->systemAddress.ToString() << std::endl;
                 ResetConsoleColor();
-                return;
+                if (m_isHost)
+                {
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
+                    ClientInfo info;
+                    info.address = packet->systemAddress;
+                    info.userName = "";
+                    info.localIp = "";
+                    info.localPort = 0;
+                    info.isSameLAN = false;
+                    info.connectedTime = std::chrono::steady_clock::now();
+                    m_clients.push_back(info);
+                }
+                break;
+
+            case ID_PUNCH_PACKET:
+            {
+                RakNet::BitStream bs(packet->data, packet->length, false);
+
+                // 読み捨て：ID
+                RakNet::MessageID pid;
+                bs.Read(pid);
+
+                // ラベル（HOST_PUNCH / CLIENT_PUNCH）
+                RakNet::RakString rmsg;
+                bs.Read(rmsg);
+                std::string payload = rmsg.C_String();
+
+                SetConsoleColor(2);
+                std::cout << "[Punch] from " << packet->systemAddress.ToString()<< " : " << payload << std::endl;
+                ResetConsoleColor();
+
+                // クライアント側
+                if (!m_isHost && payload == "HOST_PUNCH")
+                {
+                    SetConsoleColor(2);
+                    std::cout << "[Client] ホストパンチ受信 -> TCP完遂送信\n";
+                    ResetConsoleColor();
+                    StopPunchLoop();
+                    SendPunchDoneTCP(m_hostIp, 55555);
+                }
+
+                // ホスト側
+                if (m_isHost && payload == "CLIENT_PUNCH")
+                {
+                    SetConsoleColor(2);
+                    std::cout << "[Host]クライアントのUDPパンチ受信\n";
+                    ResetConsoleColor();
+
+                    // 追加情報を受信（長さ付きバイナリ）
+                    std::string userName = "名無し"; // デフォルト
+
+                    // 残っているデータがあれば JSON 長さ→JSONデータ を読む
+                    if (bs.GetNumberOfUnreadBits() > 0)
+                    {
+                        unsigned int jsonLen = 0;
+                        if (bs.Read(jsonLen) && jsonLen > 0)
+                        {
+                            std::string jsonStr;
+                            jsonStr.resize(jsonLen);
+                            bs.Read(&jsonStr[0], jsonLen);
+
+                            try {
+                                json j = json::parse(jsonStr);
+
+                                // user_name_b64 を復号して userName にする
+                                std::string encodedName = j.value("user_name_b64", "");
+                                if (!encodedName.empty()) {
+                                    userName = FromBase64(encodedName);
+                                }
+                            }
+                            catch (const std::exception& e) {
+                                SetConsoleColor(4);
+                                std::cerr << "[Host] JSON parse error in PUNCH packet: " << e.what() << std::endl;
+                                ResetConsoleColor();
+                            }
+                        }
+                    }
+                }
+
+                break;
+            }
+            case ID_LEAVE_NOTIFICATION:
+            {
+                if (!m_isHost) {
+                    SetConsoleColor(4);
+                    std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
+                    ResetConsoleColor();
+                    m_forceExit = true;       // ★追加
+                    Stop();  // クライアントは最初に戻る
+                }
+                else {
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
+                    auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                        [&](const ClientInfo& c) { return c.address == packet->systemAddress; });
+                    if (it != m_clients.end()) {
+                        SetConsoleColor(4);
+                        std::cout << "[Info] クライアント " << it->userName << " が退出しました。\n";
+                        ResetConsoleColor();
+                        m_clients.erase(it); // 以降送信不要
+                    }
+                }
+                break;
+            }
+            case ID_HEARTBEAT:
+            {
+                if (m_isHost) {
+                    std::lock_guard<std::mutex> lock(m_heartbeatMutex);
+                    m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();
+                }
+                else {
+                    m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+                }
+                break;
+            }
+            case ID_GAME_MESSAGE:
+            {
+                RakNet::BitStream bs(packet->data, packet->length, false);
+                RakNet::MessageID msgId; bs.Read(msgId);
+
+                unsigned int len = 0;
+                bs.Read(len);
+                if (len == 0) break;
+
+                std::string msg(len, '\0');
+                bs.Read(&msg[0], len);
+
+                if (m_isHost)
+                {
+                    RelayPacket(RelayType::Chat, packet->systemAddress, bs);
+                }
+
+                size_t sep = msg.find("::");
+                if (sep != std::string::npos)
+                {
+                    std::string name = msg.substr(0, sep);
+                    std::string body = msg.substr(sep + 2);
+                    SetConsoleColor(15);
+                    std::cout << "[" << name << "] " << body << std::endl;
+                    ResetConsoleColor();
+                }
+                break;
             }
 
-            // 送信対象のクライアントアドレスをコピー
-            for (auto& c : m_clients)
-                clientAddresses.push_back(c.address);
+
+            // 🎮 入力系受信
+            case ID_GAME_INPUT:
+            {
+                RakNet::BitStream bsIn(packet->data, packet->length, false);
+                bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+
+                AnyTime input;
+                bsIn.Read(input.playerId);
+                bsIn.Read(input.inputFlags);
+                bsIn.Read(input.timeStamp);
+
+                //なお、入力にリレーは存在しない (クライアントしか送信しない)
+
+                // TODO: ここでゲームロジックに渡す
+                break;
+            }
+
+            case ID_GAME_REGULAR_UPDATE:
+            {
+                RakNet::BitStream bsIn(packet->data, packet->length, false);
+                bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+
+                Regular reg;
+                bsIn.Read(reg.objectID);
+                bsIn.Read(reg.position.x);
+                bsIn.Read(reg.position.y);
+                bsIn.Read(reg.position.z);
+                bsIn.Read(reg.rotation.x);
+                bsIn.Read(reg.rotation.y);
+                bsIn.Read(reg.rotation.z);
+                bsIn.Read(reg.rotation.w);
+                bsIn.Read(reg.linerVelocity.x);
+                bsIn.Read(reg.linerVelocity.y);
+                bsIn.Read(reg.linerVelocity.z);
+                bsIn.Read(reg.angularVelocity.x);
+                bsIn.Read(reg.angularVelocity.y);
+                bsIn.Read(reg.angularVelocity.z);
+
+                if (m_isHost)
+                {
+                    //ホストはみんなにすでに送ってる。ここに入るのは想定外
+                    // クライアントから届いた定期更新を全員へ中継
+                    //RelayPacket(RelayType::RegularUpdate, packet->systemAddress, bsIn);
+                }
+
+                // クライアントはゲームロジック反映
+                break;
+            }
+
+            case ID_VOICE_PACKET:
+            {
+                const char* audioData = reinterpret_cast<const char*>(&packet->data[1]);
+                int dataSize = packet->length - 1;
+
+                if (m_isHost)
+                {
+                    RakNet::BitStream bs;
+                    bs.Write((RakNet::MessageID)ID_VOICE_PACKET);
+                    bs.Write(audioData, dataSize);
+                    RelayPacket(RelayType::Voice, packet->systemAddress, bs);
+                }
+
+                // 音声再生
+                // DecodeAndPlay(audioData, dataSize);
+                break;
+            }
+
+
+
+
+            default:
+                break;
+            }
         }
-
-        // ホスト→クライアント送信時：ホスト名を付けて送信
-        std::string senderName = m_userName.empty() ? "ホスト" : m_userName;
-        std::string payload = senderName + "::" + message;
-
-        RakNet::BitStream bs;
-        bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
-
-        unsigned int payloadLen = static_cast<unsigned int>(payload.size());
-        bs.Write(payloadLen);
-        if (payloadLen > 0) bs.Write(payload.c_str(), payloadLen);
-
-        for (auto& addr : clientAddresses)
-        {
-            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, addr, false);
-        }
-    }
-    else
-    {
-        std::string senderName = m_userName.empty() ? "匿名" : m_userName;
-        std::string payload = senderName + "::" + message;
-
-        RakNet::BitStream bs;
-        bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
-
-        unsigned int len = static_cast<unsigned int>(payload.size());
-        bs.Write(len);
-        if (len > 0) bs.Write(payload.c_str(), len);
-
-        if (m_peer->NumberOfConnections() > 0)
-            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, m_peer->GetSystemAddressFromIndex(0), false);
-        else
-        {
-            SetConsoleColor(4);
-            std::cout << "[SendMessage] 接続先ホストが存在しません\n";
-            ResetConsoleColor();
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
-
-
 
 
 void ChatNetwork::SetPendingPunch(const std::string& extIp, unsigned short extPort,
@@ -454,223 +682,7 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
     WSACleanup();
 }
 
-void ChatNetwork::ReceiveLoop()
-{
-    while (m_running)
-    {
-        for (RakNet::Packet* packet = m_peer->Receive(); packet; m_peer->DeallocatePacket(packet), packet = m_peer->Receive())
-        {
-            switch (packet->data[0])
-            {
-            case ID_NEW_INCOMING_CONNECTION:
 
-                SetConsoleColor(6);
-                std::cout << "新規接続: " << packet->systemAddress.ToString() << std::endl;
-                ResetConsoleColor();
-                if (m_isHost)
-                {
-                    std::lock_guard<std::mutex> lock(m_clientsMutex);
-                    ClientInfo info;
-                    info.address = packet->systemAddress;
-                    info.userName = "";
-                    info.localIp = "";
-                    info.localPort = 0;
-                    info.isSameLAN = false;
-                    info.connectedTime = std::chrono::steady_clock::now();
-                    m_clients.push_back(info);
-                }
-                break;
-
-            case ID_PUNCH_PACKET:
-            {
-                RakNet::BitStream bs(packet->data, packet->length, false);
-
-                // 読み捨て：ID
-                RakNet::MessageID pid;
-                bs.Read(pid);
-
-                // ラベル（HOST_PUNCH / CLIENT_PUNCH）
-                RakNet::RakString rmsg;
-                bs.Read(rmsg);
-                std::string payload = rmsg.C_String();
-
-                SetConsoleColor(2);
-                std::cout << "[Punch] from " << packet->systemAddress.ToString()<< " : " << payload << std::endl;
-                ResetConsoleColor();
-
-                // クライアント側
-                if (!m_isHost && payload == "HOST_PUNCH")
-                {
-                    SetConsoleColor(2);
-                    std::cout << "[Client] ホストパンチ受信 -> TCP完遂送信\n";
-                    ResetConsoleColor();
-                    StopPunchLoop();
-                    SendPunchDoneTCP(m_hostIp, 55555);
-                }
-
-                // ホスト側
-                if (m_isHost && payload == "CLIENT_PUNCH")
-                {
-                    SetConsoleColor(2);
-                    std::cout << "[Host]クライアントのUDPパンチ受信\n";
-                    ResetConsoleColor();
-
-
-                    //-------------------------------------------------------------------------------------------------------
-                     
-                    // 追加情報を受信（長さ付きバイナリ）
-                    std::string userName = "名無し"; // デフォルト
-
-                    // 残っているデータがあれば JSON 長さ→JSONデータ を読む
-                    if (bs.GetNumberOfUnreadBits() > 0)
-                    {
-                        unsigned int jsonLen = 0;
-                        if (bs.Read(jsonLen) && jsonLen > 0)
-                        {
-                            std::string jsonStr;
-                            jsonStr.resize(jsonLen);
-                            bs.Read(&jsonStr[0], jsonLen);
-
-                            try {
-                                json j = json::parse(jsonStr);
-                                
-                                // user_name_b64 を復号して userName にする
-                                std::string encodedName = j.value("user_name_b64", "");
-                                if (!encodedName.empty()) {
-                                    userName = FromBase64(encodedName);
-                                }
-                            }
-                            catch (const std::exception& e) {
-                                SetConsoleColor(4);
-                                std::cerr << "[Host] JSON parse error in PUNCH packet: " << e.what() << std::endl;
-                                ResetConsoleColor();
-                            }
-                        }
-                    }
-
-                    //SetConsoleColor(2);
-                    ////std::cout << "[Host] クライアントパンチ受信 -> ホスト→クライアントパンチ開始\n";
-                    //std::cout << "[Host] クライアントパンチ受信パンチはリレー受信でパンチ済み\n";
-                    //ResetConsoleColor();
-
-                    //// m_clients に情報を反映
-                    //{
-                    //    std::lock_guard<std::mutex> lock(m_clientsMutex);
-                    //    for (auto& c : m_clients)
-                    //    {
-                    //        if (c.address == packet->systemAddress)
-                    //        {
-                    //            c.localIp = localIp;
-                    //            c.localPort = localPort;
-                    //            c.isSameLAN = sameLAN;
-                    //            c.userName = userName; // ←新規メンバ
-                    //            break;
-                    //        }
-                    //    }
-                    //}
-
-                    //// 同一LANならローカルIP/ポートを使用
-                    //if (sameLAN && !localIp.empty() && localPort != 0)
-                    //{
-                    //    SetConsoleColor(1);
-                    //    std::cout << "[Host] 同一LAN検出: " << localIp << ":" << localPort << " でパンチ開始\n";
-                    //    ResetConsoleColor();
-                    //    StartPunchLoop(localIp, localPort, true);//ローカルだから12345でいい
-                    //}
-                    //else
-                    //{
-                    //    //NATマッピングポートに送信
-                    //    std::lock_guard<std::mutex> lock(m_clientsMutex);
-                    //    for (auto& c : m_clients)
-                    //    {
-                    //        if (c.address == packet->systemAddress)
-                    //        {
-                    //            // 同一LANの場合はローカルポート、NAT越えの場合は外部ポート
-                    //            unsigned short portToUse = c.isSameLAN ? c.localPort : c.externalPort;
-
-                    //            StartPunchLoop(packet->systemAddress.ToString(), portToUse, true);
-                    //            break;
-                    //        }
-                    //    }
-                    //}
-                    //-------------------------------------------------------------------------------------------------------
-                }
-
-                break;
-            }
-            case ID_GAME_MESSAGE:
-            {
-                RakNet::BitStream bs(packet->data, packet->length, false);
-                RakNet::MessageID msgId; bs.Read(msgId);
-
-                unsigned int len = 0;
-                bs.Read(len);
-                if (len == 0) break;
-
-                std::string msg;
-                msg.resize(len);
-                bs.Read(&msg[0], len);
-
-                // "::" 区切りなら [名前] メッセージ形式にする
-                size_t sep = msg.find("::");
-                if (sep != std::string::npos)
-                {
-                    std::string name = msg.substr(0, sep);
-                    std::string body = msg.substr(sep + 2);
-                    SetConsoleColor(15);
-                    std::cout << "[" << name << "] " << body << std::endl;
-                    ResetConsoleColor();
-                }
-                else
-                {
-                    SetConsoleColor(15);
-                    std::cout << "[受信] " << msg << std::endl;
-                    ResetConsoleColor();
-                }
-                break;
-            }
-            case ID_LEAVE_NOTIFICATION:
-            {
-                if (!m_isHost) {
-                    SetConsoleColor(4);
-                    std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
-                    ResetConsoleColor();
-                    m_forceExit = true;       // ★追加
-                    Stop();  // クライアントは最初に戻る
-                }
-                else {
-                    std::lock_guard<std::mutex> lock(m_clientsMutex);
-                    auto it = std::find_if(m_clients.begin(), m_clients.end(),
-                        [&](const ClientInfo& c) { return c.address == packet->systemAddress; });
-                    if (it != m_clients.end()) {
-                        SetConsoleColor(4);
-                        std::cout << "[Info] クライアント " << it->userName << " が退出しました。\n";
-                        ResetConsoleColor();
-                        m_clients.erase(it); // 以降送信不要
-                    }
-                }
-                break;
-            }
-            case ID_HEARTBEAT:
-            {
-                if (m_isHost) {
-                    std::lock_guard<std::mutex> lock(m_heartbeatMutex);
-                    m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();
-                }
-                else {
-                    m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
-                }
-                break;
-            }
-
-
-            default:
-                break;
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
 
 void ChatNetwork::Stop()
 {
@@ -1014,3 +1026,154 @@ void ChatNetwork::StartHostMonitor()
         });
 }
 
+//--------------------------------------------------------------------------------------
+// ++++++++++++++++++++++++++++++ここから下は送信関係+++++++++++++++++++++++++++++++++++
+//--------------------------------------------------------------------------------------
+
+void ChatNetwork::RelayPacket(RelayType type, const RakNet::SystemAddress& sender, const RakNet::BitStream& data)
+{
+    if (!m_isHost) return;
+
+    PacketPriority priority = HIGH_PRIORITY;
+    PacketReliability reliability = RELIABLE_ORDERED;
+    unsigned char channel = 0;
+
+    switch (type)
+    {
+    case RelayType::RegularUpdate:
+        priority = HIGH_PRIORITY;
+        reliability = RELIABLE_ORDERED_WITH_ACK_RECEIPT;
+        channel = 1;
+        break;
+
+    case RelayType::Chat:
+        priority = HIGH_PRIORITY;
+        reliability = RELIABLE_ORDERED;
+        channel = 2;
+        break;
+
+    case RelayType::Voice:
+        priority = HIGH_PRIORITY;
+        reliability = UNRELIABLE_SEQUENCED;
+        channel = 3;
+        break;
+    }
+
+    // 送信先リスト構築
+    std::vector<RakNet::SystemAddress> targets;
+    {
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        for (auto& c : m_clients)
+        {
+            // RegularUpdate は全員、それ以外は送信者以外
+            if (type == RelayType::RegularUpdate || c.address != sender)
+                targets.push_back(c.address);
+        }
+    }
+
+    // 各ターゲットに送信
+    for (auto& addr : targets)
+    {
+        m_peer->Send(&data, priority, reliability, channel, addr, false);
+    }
+}
+
+// ------------------------------------
+// 入力系送信（随時）クライアントのみ送信
+// ------------------------------------
+void ChatNetwork::SendGameInput(const AnyTime& inputData)
+{
+    if (!m_peer) return;
+
+    RakNet::BitStream bs;
+    bs.Write((RakNet::MessageID)ID_GAME_INPUT);
+    bs.Write(inputData.playerId);
+    bs.Write(inputData.inputFlags);
+    bs.Write(inputData.timeStamp);
+
+    // 軽量で確実性不要：UNRELIABLE
+    m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true);
+}
+
+// ------------------------------------
+// 定期更新送信（ホスト ）
+// ------------------------------------
+void ChatNetwork::SendRegularUpdate(const Regular& update)
+{
+    if (!m_peer) return;
+
+    RakNet::BitStream bs;
+    bs.Write((RakNet::MessageID)ID_GAME_REGULAR_UPDATE);
+    bs.Write(update.objectID);
+    bs.Write(update.position.x);
+    bs.Write(update.position.y);
+    bs.Write(update.position.z);
+    bs.Write(update.rotation.x);
+    bs.Write(update.rotation.y);
+    bs.Write(update.rotation.z);
+    bs.Write(update.rotation.w);
+    bs.Write(update.linerVelocity.x);
+    bs.Write(update.linerVelocity.y);
+    bs.Write(update.linerVelocity.z);
+    bs.Write(update.angularVelocity.x);
+    bs.Write(update.angularVelocity.y);
+    bs.Write(update.angularVelocity.z);
+
+    if (m_isHost)
+    {
+        // ホストなら中継
+        RelayPacket(RelayType::RegularUpdate, RakNet::UNASSIGNED_SYSTEM_ADDRESS, bs);
+    }
+    else if (m_peer->NumberOfConnections() > 0)
+    {
+        //おかしい
+        // クライアント → ホスト
+       // m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 1, m_peer->GetSystemAddressFromIndex(0), false);
+    }
+}
+
+
+
+// ------------------------------------
+// ボイスデータ送信（ホスト or クライアント共通）
+// ------------------------------------
+void ChatNetwork::SendVoicePacket(const char* audioData, int dataSize)
+{
+    if (!m_peer || dataSize <= 0) return;
+
+    RakNet::BitStream bs;
+    bs.Write((RakNet::MessageID)ID_VOICE_PACKET);
+    bs.Write(audioData, dataSize);
+
+    if (m_isHost)
+    {
+        RelayPacket(RelayType::Voice, RakNet::UNASSIGNED_SYSTEM_ADDRESS, bs);
+    }
+    else if (m_peer->NumberOfConnections() > 0)
+    {
+        m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, m_peer->GetSystemAddressFromIndex(0), false);
+    }
+}
+
+
+
+void ChatNetwork::SendMessage(const std::string& message)
+{
+    RakNet::BitStream bs;
+    bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
+
+    std::string senderName = m_userName.empty() ? "匿名" : m_userName;
+    std::string payload = senderName + "::" + message;
+    unsigned int len = (unsigned int)payload.size();
+    bs.Write(len);
+    bs.Write(payload.c_str(), len);
+
+    if (m_isHost)
+    {
+        RelayPacket(RelayType::Chat, RakNet::UNASSIGNED_SYSTEM_ADDRESS, bs);
+    }
+    else if (m_peer->NumberOfConnections() > 0)
+    {
+        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 2, m_peer->GetSystemAddressFromIndex(0), false);
+    }
+}

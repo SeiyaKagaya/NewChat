@@ -22,8 +22,8 @@
 #include <atomic>
 #include <chrono>
 #include <optional>
-
-//#include "chat_session.h"  
+#include <DirectXMath.h>
+using namespace DirectX;
 
 
 #include "RakNet/Source/RakPeerInterface.h"
@@ -33,11 +33,6 @@
 #include "RakNet/Source/RakSleep.h"
 #include "RakNet/Source/RakString.h"
 #include "RakNet/Source/NatTypeDetectionClient.h"
-
-
-
-
-
 
 
 #pragma comment(lib, "RakNetDLL.lib")

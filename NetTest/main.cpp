@@ -71,7 +71,6 @@ int main()
                 SetConsoleColor(WHITE);
                 continue;
             }
-
             break;
         }
 

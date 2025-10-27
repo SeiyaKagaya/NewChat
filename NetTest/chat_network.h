@@ -1,6 +1,6 @@
-//------------------------------------------------------------
+ï»¿//------------------------------------------------------------
 // @file        chat_network.h
-// @brief       ƒ`ƒƒƒbƒgü‚èiXVÏFƒpƒ“ƒ`ˆ—{TCPŠ®‹•ñ{LAN”»’è‘Î‰{¶‘¶ŠÄ‹ƒXƒŒƒbƒh’Ç‰Áj
+// @brief       ãƒãƒ£ãƒƒãƒˆå‘¨ã‚Šï¼ˆæ›´æ–°æ¸ˆï¼šãƒ‘ãƒ³ãƒå‡¦ç†ï¼‹TCPå®Œé‚å ±å‘Šï¼‹LANåˆ¤å®šå¯¾å¿œï¼‹ç”Ÿå­˜ç›£è¦–ã‚¹ãƒ¬ãƒƒãƒ‰è¿½åŠ ï¼‰
 //------------------------------------------------------------
 #ifndef _CHAT_NETWORK_H_
 #define _CHAT_NETWORK_H_
@@ -10,15 +10,40 @@
 #include "includemanager.h"
 #include "room_manager.h"
 
-// V‚µ‚¢ƒpƒPƒbƒgID‚ğ’Ç‰Á
+
+
+
+// éšæ™‚
+struct AnyTime
+{
+    int playerId;
+    unsigned int inputFlags;
+    DWORD timeStamp;
+};
+
+// å®šæœŸ
+struct Regular
+{
+    unsigned int objectID;
+    XMFLOAT3 position;
+    XMFLOAT4 rotation;
+    XMFLOAT3 linerVelocity;
+    XMFLOAT3 angularVelocity;
+};
+
+
+// æ–°ã—ã„ãƒ‘ã‚±ãƒƒãƒˆIDã‚’è¿½åŠ 
 enum GAME_MESSAGES
 {
     ID_GAME_MESSAGE = ID_USER_PACKET_ENUM + 1,
-    ID_CLIENT_PROTOCOL,   // ƒNƒ‰ƒCƒAƒ“ƒgƒvƒƒgƒRƒ‹’Ê’m—p
-    ID_PUNCH_INFO,        // ƒNƒ‰ƒCƒAƒ“ƒg -> ƒzƒXƒg : JSON ‚É‚æ‚éŠO•”IP/port’Ê’m
-    ID_PUNCH_PACKET,      // ƒpƒ“ƒ`—pƒpƒPƒbƒgi’Ê’m^ƒpƒ“ƒ`j
-    ID_LEAVE_NOTIFICATION,// ƒNƒ‰ƒCƒAƒ“ƒg/ƒzƒXƒg‘Şo’Ê’m
-    ID_HEARTBEAT          // ¶‘¶Šm”F—p
+    ID_CLIENT_PROTOCOL,   // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆãƒ—ãƒ­ãƒˆã‚³ãƒ«é€šçŸ¥ç”¨
+    ID_PUNCH_INFO,        // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆ -> ãƒ›ã‚¹ãƒˆ : JSON ã«ã‚ˆã‚‹å¤–éƒ¨IP/porté€šçŸ¥
+    ID_PUNCH_PACKET,      // ãƒ‘ãƒ³ãƒç”¨ãƒ‘ã‚±ãƒƒãƒˆï¼ˆé€šçŸ¥ï¼ãƒ‘ãƒ³ãƒï¼‰
+    ID_LEAVE_NOTIFICATION,// ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆ/ãƒ›ã‚¹ãƒˆé€€å‡ºé€šçŸ¥
+    ID_HEARTBEAT,          // ç”Ÿå­˜ç¢ºèªç”¨
+    ID_GAME_INPUT,         // å…¥åŠ›ç³»æ§‹é€ ä½“[ã‚²ãƒ¼ãƒ ]
+    ID_GAME_REGULAR_UPDATE,// å®šæœŸæ›´æ–°[ã‚²ãƒ¼ãƒ ]
+    ID_VOICE_PACKET        // ãƒœã‚¤ãƒãƒ£[ã‚²ãƒ¼ãƒ ]
 };
 
 struct ClientInfo {
@@ -26,14 +51,19 @@ struct ClientInfo {
     std::string protocol;       // "OK4" / "OK6"
     std::string externalIp;
     unsigned short externalPort = 0;
-    std::string localIp;        // V‹K: LAN“àƒAƒhƒŒƒX
-    unsigned short localPort = 0; // V‹K: LAN“àƒ|[ƒg
-    bool isSameLAN = false;     // V‹K: “¯ˆêLAN”»’è
-    std::string userName;       // ©’Ç‰Á (ƒoƒCƒiƒŠ/CP932 ‚Å‚àˆµ‚¦‚é)
-    std::chrono::steady_clock::time_point connectedTime; // š ’Ç‰Á
+    std::string localIp;        // æ–°è¦: LANå†…ã‚¢ãƒ‰ãƒ¬ã‚¹
+    unsigned short localPort = 0; // æ–°è¦: LANå†…ãƒãƒ¼ãƒˆ
+    bool isSameLAN = false;     // æ–°è¦: åŒä¸€LANåˆ¤å®š
+    std::string userName;       // â†è¿½åŠ  (ãƒã‚¤ãƒŠãƒª/CP932 ã§ã‚‚æ‰±ãˆã‚‹)
+    std::chrono::steady_clock::time_point connectedTime; // â˜… è¿½åŠ 
 };
 
-
+// ç¨®åˆ¥ã”ã¨ã®è­˜åˆ¥å­
+enum class RelayType : uint8_t {
+    Chat,         // é€ä¿¡å…ƒä»¥å¤–ã¸è»¢é€
+    Voice,        // é€ä¿¡å…ƒä»¥å¤–ã¸è»¢é€
+    RegularUpdate // å…¨å“¡ï¼ˆé€ä¿¡å…ƒå«ã‚€ï¼‰ã«é…ä¿¡
+};
 
 class ChatNetwork
 {
@@ -41,37 +71,37 @@ public:
     ChatNetwork();
     ~ChatNetwork();
 
-    // ‰Šú‰»
+    // åˆæœŸåŒ–
     bool Init(bool host, unsigned short port, const std::string& bindIp, const std::string& protocol, RoomManager& roomManager, const std::string& youExternalIp);
 
-    // ƒzƒXƒg‚ÖÚ‘±
+    // ãƒ›ã‚¹ãƒˆã¸æ¥ç¶š
     bool ConnectToHost(const std::string& hostIp, const std::string& hostProtocol, unsigned short hostPort);
 
-    // ƒƒbƒZ[ƒW‘—M
+    // ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸é€ä¿¡
     void SendMessage(const std::string& message);
 
-    // óMƒ‹[ƒv
+    // å—ä¿¡ãƒ«ãƒ¼ãƒ—
     void ReceiveLoop();
 
-    // ©g‚ÌƒAƒhƒŒƒXæ“¾
+    // è‡ªèº«ã®ã‚¢ãƒ‰ãƒ¬ã‚¹å–å¾—
     const RakNet::SystemAddress& GetMyAddress() const;
 
-    // I—¹ˆ—
+    // çµ‚äº†å‡¦ç†
     void Stop();
 
-    // ƒNƒ‰ƒCƒAƒ“ƒg‚ª STUN ‚Å“¾‚½ŠO•”ƒAƒhƒŒƒX‚ğƒ`ƒƒƒbƒg‚É“n‚·iƒLƒ…[Ši”[j
+    // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆãŒ STUN ã§å¾—ãŸå¤–éƒ¨ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’ãƒãƒ£ãƒƒãƒˆã«æ¸¡ã™ï¼ˆã‚­ãƒ¥ãƒ¼æ ¼ç´ï¼‰
     void SetPendingPunch(const std::string& extIp, unsigned short extPort,
         const std::string& localIp, unsigned short localPort,
         bool sameLAN, const std::string& userName);
 
-    // ƒpƒ“ƒ`ƒ‹[ƒv§Œä
+    // ãƒ‘ãƒ³ãƒãƒ«ãƒ¼ãƒ—åˆ¶å¾¡
     void StartPunchLoop(const std::string& targetIp, unsigned short targetPort, bool isHostSide);
     void StopPunchLoop();
 
-    // TCP Š®‹‘—M
+    // TCP å®Œé‚é€ä¿¡
     void SendPunchDoneTCP(const std::string& targetIp, unsigned short port);
 
-    // –¼‘OŠi”[
+    // åå‰æ ¼ç´
     void SetUserName(const std::string& name);
 
     void SetConsoleColor(WORD color);
@@ -80,8 +110,8 @@ public:
     std::string ToBase64(const std::string& input);
     std::string FromBase64(const std::string& input);
 
-    void SendLeaveNotification();        // ƒNƒ‰ƒCƒAƒ“ƒg—p
-    void BroadcastLeaveNotification();   // ƒzƒXƒg—p
+    void SendLeaveNotification();        // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆç”¨
+    void BroadcastLeaveNotification();   // ãƒ›ã‚¹ãƒˆç”¨
     bool IsHost() const { return m_isHost; }
 
     void StartHeartbeat();
@@ -93,32 +123,26 @@ public:
 
     std::optional<std::chrono::steady_clock::time_point> GetLastHeartbeatOpt(RakNet::SystemAddress addr);
 
-
-
     void StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp);
 
-    //void ChatNetwork::StartHostToClientPunch(const PendingClientInfo& info);
-
-
-
-    //void StartClientRelayPoll(RoomManager& roomManager, const std::string& roomName,bool isSameLan, const std::string& hostExternalIp);
-
-
-    // ============================================================
-    // ššš V‹K’Ç‰ÁF¶‘¶ŠÄ‹ƒXƒŒƒbƒh‹@”\iƒzƒXƒg^ƒNƒ‰ƒCƒAƒ“ƒgj
-    // ============================================================
-    void StartClientMonitor();  // ƒzƒXƒg‚ªƒNƒ‰ƒCƒAƒ“ƒg¶‘¶Šm”F
-    void StartHostMonitor();    // ƒNƒ‰ƒCƒAƒ“ƒg‚ªƒzƒXƒg¶‘¶Šm”F
+    void StartClientMonitor();  // ãƒ›ã‚¹ãƒˆãŒã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆç”Ÿå­˜ç¢ºèª
+    void StartHostMonitor();    // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆãŒãƒ›ã‚¹ãƒˆç”Ÿå­˜ç¢ºèª
 
     bool GetForceExit() { return m_forceExit; }
 
-    // ChatNetwork.h ‚É’Ç‰Á
-    //void StartJoinRequestPoll(RoomManager& roomManager, const std::string& roomName);
 
+    // å…¥åŠ›ç³»é€ä¿¡ï¼ˆéšæ™‚ï¼‰
+    void SendGameInput(const AnyTime& inputData);
 
+    // å®šæœŸæ›´æ–°é€ä¿¡
+    void SendRegularUpdate(const Regular& update);
+   
+    // ãƒœã‚¤ã‚¹ãƒ‡ãƒ¼ã‚¿é€ä¿¡
+    void SendVoicePacket(const char* audioData, int dataSize);
 
-
-
+    void RelayPacket(RelayType type, const RakNet::SystemAddress& sender, const RakNet::BitStream& data);
+    
+  
 private:
     RakNet::RakPeerInterface* m_peer;
     bool m_isHost;
@@ -132,7 +156,7 @@ private:
     std::vector<ClientInfo> m_clients;
     std::atomic<bool> m_running{ true };
 
-    // ƒpƒ“ƒ`ŠÇ—
+    // ãƒ‘ãƒ³ãƒç®¡ç†
     std::string m_pendingPunchIp;
     unsigned short m_pendingPunchPort = 0;
     std::string m_pendingLocalIp;
@@ -140,51 +164,98 @@ private:
     bool m_pendingSameLAN = false;
     std::atomic<bool> m_hasPendingPunch{ false };
     std::mutex m_pendingMutex;
-    std::string m_pendingUserName; // ©’Ç‰Á (raw bytes as provided)
+    std::string m_pendingUserName; // â†è¿½åŠ  (raw bytes as provided)
 
-    std::string m_userName; // ©•ª‚Ìƒ†[ƒU[–¼iƒNƒ‰ƒCƒAƒ“ƒg—pj
+    std::string m_userName; // è‡ªåˆ†ã®ãƒ¦ãƒ¼ã‚¶ãƒ¼åï¼ˆã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆç”¨ï¼‰
 
-    // Ú‘±æƒzƒXƒgî•ñiƒNƒ‰ƒCƒAƒ“ƒg‚Ég—pj
+    // æ¥ç¶šå…ˆãƒ›ã‚¹ãƒˆæƒ…å ±ï¼ˆã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆæ™‚ã«ä½¿ç”¨ï¼‰
     std::string m_hostIp;
     unsigned short m_hostPort = 0;
 
-    // ƒpƒ“ƒ`ƒ‹[ƒvÀs—p
+    // ãƒ‘ãƒ³ãƒãƒ«ãƒ¼ãƒ—å®Ÿè¡Œç”¨
     std::atomic<bool> m_punchLoopActive{ false };
     std::thread m_punchThread;
 
-    // TCP Š®‹‘Òó—p
+    // TCP å®Œé‚å¾…å—ç”¨
     std::atomic<bool> m_tcpWaiterActive{ false };
     std::thread m_tcpWaiterThread;
 
-    // m_canSend ‚Ì•ÛŒì
+    // m_canSend ã®ä¿è­·
     std::mutex m_canSendMutex;
 
-    // ƒn[ƒgƒr[ƒgŠÇ—
+    // ãƒãƒ¼ãƒˆãƒ“ãƒ¼ãƒˆç®¡ç†
     std::atomic<bool> m_heartbeatActive{ false };
     std::thread m_heartbeatThread;
     std::mutex m_heartbeatMutex;
-    std::map<RakNet::SystemAddress, std::chrono::steady_clock::time_point> m_lastHeartbeat; // ƒzƒXƒg—p
+    std::map<RakNet::SystemAddress, std::chrono::steady_clock::time_point> m_lastHeartbeat; // ãƒ›ã‚¹ãƒˆç”¨
     std::chrono::seconds m_heartbeatTimeout{ 10 };
 
+  std::atomic<bool> m_clientMonitorActive{ false };  // ãƒ›ã‚¹ãƒˆå´ç›£è¦–æœ‰åŠ¹
+    std::thread m_clientMonitorThread;                 // ãƒ›ã‚¹ãƒˆâ†’ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆç›£è¦–ã‚¹ãƒ¬ãƒƒãƒ‰
 
-    // ============================================================
-    // ššš V‹K’Ç‰ÁF¶‘¶ŠÄ‹ƒXƒŒƒbƒhŠÖ˜Aƒƒ“ƒo
-    // ============================================================
-    std::atomic<bool> m_clientMonitorActive{ false };  // ƒzƒXƒg‘¤ŠÄ‹—LŒø
-    std::thread m_clientMonitorThread;                 // ƒzƒXƒg¨ƒNƒ‰ƒCƒAƒ“ƒgŠÄ‹ƒXƒŒƒbƒh
-
-    std::atomic<bool> m_hostMonitorActive{ false };    // ƒNƒ‰ƒCƒAƒ“ƒg‘¤ŠÄ‹—LŒø
-    std::thread m_hostMonitorThread;                   // ƒNƒ‰ƒCƒAƒ“ƒg¨ƒzƒXƒgŠÄ‹ƒXƒŒƒbƒh
+    std::atomic<bool> m_hostMonitorActive{ false };    // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆå´ç›£è¦–æœ‰åŠ¹
+    std::thread m_hostMonitorThread;                   // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆâ†’ãƒ›ã‚¹ãƒˆç›£è¦–ã‚¹ãƒ¬ãƒƒãƒ‰
 
     std::thread m_receiveThread;
 
-    std::atomic<bool> m_forceExit{ false }; // ƒNƒ‰ƒCƒAƒ“ƒg‹­§I—¹ƒtƒ‰ƒO
+    std::atomic<bool> m_forceExit{ false }; // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆå¼·åˆ¶çµ‚äº†ãƒ•ãƒ©ã‚°
 
 
-    // ChatNetwork ƒNƒ‰ƒX‚Ìƒƒ“ƒo‚Æ‚µ‚Ä’Ç‰Á
+    // ChatNetwork ã‚¯ãƒ©ã‚¹ã®ãƒ¡ãƒ³ãƒã¨ã—ã¦è¿½åŠ 
     std::thread m_clientRelayPollThread;
 
-    bool running = false;  // ƒXƒŒƒbƒh“®ì—pƒtƒ‰ƒO
+    bool running = false;  // ã‚¹ãƒ¬ãƒƒãƒ‰å‹•ä½œç”¨ãƒ•ãƒ©ã‚°
 };
+
+
+
+
+
+
+
+
+//| | ç‰¹æ€§                                    | è»½ã• | ç¢ºå®Ÿæ€§ | é †åºä¿è¨¼    | ç”¨é€”ä¾‹                       |
+//| --------------------------------------- - | ---- | ---- - | --------- - | -----------------------------|
+//| **UNRELIABLE * *                          | â—   | âœ•     | âœ•          | åº§æ¨™ã€ç§»å‹•ã€ã‚«ãƒ¡ãƒ©           |
+//| **UNRELIABLE_SEQUENCED * *ã€€ã€€ã€€ã€€ã€€ã€€ã€€  | â—   | âœ•     | â–³(æœ€æ–°ã®ã¿)| ç§»å‹•ãƒ»å‘ãåŒæœŸ               |
+//| **RELIABLE * *                            | â—‹   | â—     | âœ•          | ã‚¢ã‚¤ãƒ†ãƒ å–å¾—                 |
+//| **RELIABLE_ORDERED * *                    | â–³   | â—     | â—          | æ”»æ’ƒ-ã‚¤ãƒ™ãƒ³ãƒˆ-ãƒãƒ£ãƒƒãƒˆ       |
+//| **RELIABLE_SEQUENCED * *                  | â—‹   | â—     | â–³ï¼ˆæœ€æ–°ï¼‰  | HPãƒãƒ¼ãªã©ä¸Šæ›¸ãå‹æƒ…å ±       |
+//| **RELIABLE_ORDERED_WITH_ACK_RECEIPT * *   | âœ•   | â—â—   | â—â—        |ã‚¯ã‚¨ã‚¹ãƒˆé€²è¡Œ-ã‚·ã‚¹ãƒ†ãƒ ã‚¤ãƒ™ãƒ³ãƒˆ |
+
+
+
+//ä½¿ç”¨ä¾‹ã¯memo!!!!!!!!!!.txtã«ã‚ã‚Š
+
+//é€ä¿¡---UNRELIABLEï¼ˆè»½é‡ãƒ»é †åºä¿è¨¼ãªã—ãƒ»ãƒ­ã‚¹ãƒˆOKï¼‰
+
+//RakNet::BitStream bsOut;
+//bsOut.Write((RakNet::MessageID)ID_PLAYER_POSITION);
+//bsOut.Write(playerId);
+//bsOut.Write(playerPos.x);
+//bsOut.Write(playerPos.y);
+//bsOut.Write(playerPos.z);
+//
+//peer->Send(
+//    &bsOut,
+//    LOW_PRIORITY,
+//    UNRELIABLE,
+//    0,
+//    address,
+//    false
+//);
+
+
+//å—ä¿¡
+//case ID_PLAYER_POSITION: {
+//    RakNet::BitStream bsIn(packet->data, packet->length, false);
+//    bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+//    int id; float x, y, z;
+//    bsIn.Read(id); bsIn.Read(x); bsIn.Read(y); bsIn.Read(z);
+//    UpdatePlayerPosition(id, x, y, z);
+//    break;
+//}
+
+
 
 #endif

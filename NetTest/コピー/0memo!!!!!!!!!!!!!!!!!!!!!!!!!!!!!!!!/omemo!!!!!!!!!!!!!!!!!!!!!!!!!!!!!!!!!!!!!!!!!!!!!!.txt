@@ -41,12 +41,276 @@
 		
 	新規のこと
 		
+			新規送受信の組む込み。ホストリレー組み込み、その後チャットテスト。(これからチャットテスト)
+		
+			リレーの組み込み
+					
+		
 			部屋情報に、現在の人数反映。そのため、ホストに現在の人数を更新させるようにする
 			(例えば、クライアントが入室、もしくは退室したときに[開通状態ね]にサーバーに人数変動通知を送る...みたいな？)
 		
-			リレーの組み込み
-		
-			ボイスチャットはゲーム組込後？まえか流石に。
+			ボイスチャット？？？？？？？
+
+
+
+
+
+
+
+
+| | 特性                                    | 軽さ | 確実性 | 順序保証    | 用途例                       |
+| --------------------------------------- - | ---- | ---- - | --------- - | -----------------------------|
+| **UNRELIABLE * *                          | ◎   | ✕     | ✕          | 座標、移動、カメラ           |
+| **UNRELIABLE_SEQUENCED * *　　　　　　　  | ◎   | ✕     | △(最新のみ)| 移動・向き同期               |
+| **RELIABLE * *                            | ○   | ◎     | ✕          | アイテム取得                 |
+| **RELIABLE_ORDERED * *                    | △   | ◎     | ◎          | 攻撃-イベント-チャット       |
+| **RELIABLE_SEQUENCED * *                  | ○   | ◎     | △（最新）  | HPバーなど上書き型情報       |
+| **RELIABLE_ORDERED_WITH_ACK_RECEIPT * *   | ✕   | ◎◎   | ◎◎        |クエスト進行-システムイベント |
+
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+送信---UNRELIABLE（軽量・順序保証なし・ロストOK）
+
+用途例：キャラ座標、カメラ方向など高速更新系
+
+RakNet::BitStream bsOut;
+bsOut.Write((RakNet::MessageID)ID_PLAYER_POSITION);
+bsOut.Write(playerId);
+bsOut.Write(playerPos.x);
+bsOut.Write(playerPos.y);
+bsOut.Write(playerPos.z);
+
+peer->Send(
+    &bsOut,
+    LOW_PRIORITY,
+    UNRELIABLE,
+    0,
+    address,
+    false
+);
+
+
+受信
+case ID_PLAYER_POSITION: {
+    RakNet::BitStream bsIn(packet->data, packet->length, false);
+    bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+    int id; float x, y, z;
+    bsIn.Read(id); bsIn.Read(x); bsIn.Read(y); bsIn.Read(z);
+    UpdatePlayerPosition(id, x, y, z);
+    break;
+}
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+NRELIABLE_SEQUENCED（最新優先・ロストOK）
+
+用途例：移動・向き同期、アニメーションなど
+
+
+送信
+RakNet::BitStream bsOut;
+bsOut.Write((RakNet::MessageID)ID_PLAYER_ROTATION);
+bsOut.Write(playerId);
+bsOut.Write(rotationYaw);
+bsOut.Write(rotationPitch);
+
+peer->Send(
+    &bsOut,
+    LOW_PRIORITY,
+    UNRELIABLE_SEQUENCED,
+    1, // チャンネル1: 向き用
+    address,
+    false
+);
+
+
+受信
+case ID_PLAYER_ROTATION: {
+    RakNet::BitStream bsIn(packet->data, packet->length, false);
+    bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+    int id; float yaw, pitch;
+    bsIn.Read(id); bsIn.Read(yaw); bsIn.Read(pitch);
+    UpdatePlayerRotation(id, yaw, pitch);
+    break;
+}
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+RELIABLE（必ず届く・順序保証なし）
+
+用途例：アイテム取得、スキル使用通知など
+
+送信
+RakNet::BitStream bsOut;
+bsOut.Write((RakNet::MessageID)ID_ITEM_PICKUP);
+bsOut.Write(playerId);
+bsOut.Write(itemId);
+
+peer->Send(
+    &bsOut,
+    HIGH_PRIORITY,
+    RELIABLE,
+    2, // チャンネル2: アイテム系
+    address,
+    false
+);
+
+
+受信
+case ID_ITEM_PICKUP: {
+    RakNet::BitStream bsIn(packet->data, packet->length, false);
+    bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+    int playerId, itemId;
+    bsIn.Read(playerId);
+    bsIn.Read(itemId);
+    AddItemToInventory(playerId, itemId);
+    break;
+}
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+RELIABLE_ORDERED（確実＆順序保証）
+
+用途例：攻撃、イベント、チャットなど順番が大事な処理
+
+🔸送信側
+RakNet::BitStream bsOut;
+bsOut.Write((RakNet::MessageID)ID_PLAYER_ATTACK);
+bsOut.Write(playerId);
+bsOut.Write(skillId);
+bsOut.Write(targetId);
+
+peer->Send(
+    &bsOut,
+    HIGH_PRIORITY,
+    RELIABLE_ORDERED,
+    3, // チャンネル3: 攻撃イベント
+    address,
+    false
+);
+
+🔸受信側
+case ID_PLAYER_ATTACK: {
+    RakNet::BitStream bsIn(packet->data, packet->length, false);
+    bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+    int playerId, skillId, targetId;
+    bsIn.Read(playerId);
+    bsIn.Read(skillId);
+    bsIn.Read(targetId);
+    ExecuteAttack(playerId, skillId, targetId);
+    break;
+}
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+RELIABLE_SEQUENCED（確実＋最新のみ保持）
+
+用途例：HPバーやステータスなど頻繁に上書きされる値
+
+🔸送信側
+RakNet::BitStream bsOut;
+bsOut.Write((RakNet::MessageID)ID_PLAYER_HP_UPDATE);
+bsOut.Write(playerId);
+bsOut.Write(currentHP);
+
+peer->Send(
+    &bsOut,
+    MEDIUM_PRIORITY,
+    RELIABLE_SEQUENCED,
+    4, // チャンネル4: ステータス同期
+    address,
+    false
+);
+
+🔸受信側
+case ID_PLAYER_HP_UPDATE: {
+    RakNet::BitStream bsIn(packet->data, packet->length, false);
+    bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+    int playerId, hp;
+    bsIn.Read(playerId);
+    bsIn.Read(hp);
+    UpdateHPBar(playerId, hp);
+    break;
+}
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+ELIABLE_ORDERED_WITH_ACK_RECEIPT（確実＋順序保証＋ACKあり）
+
+用途例：クエスト進行、ホスト変更、セッション終了通知など
+
+🔸送信側
+RakNet::BitStream bsOut;
+bsOut.Write((RakNet::MessageID)ID_QUEST_PROGRESS);
+bsOut.Write(playerId);
+bsOut.Write(questId);
+bsOut.Write(progress);
+
+RakNet::MessageID msgId = peer->Send(
+    &bsOut,
+    HIGH_PRIORITY,
+    RELIABLE_ORDERED_WITH_ACK_RECEIPT,
+    5, // チャンネル5: システム通知
+    address,
+    false
+);
+
+// ACK通知が来た時の処理
+peer->SetReceivedAcknowledgeHandler(msgId, [](bool success) {
+    if (success)
+        std::cout << "[ACK] クエスト進行データを受信側が確認しました。" << std::endl;
+});
+
+🔸受信側
+case ID_QUEST_PROGRESS: {
+    RakNet::BitStream bsIn(packet->data, packet->length, false);
+    bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
+    int playerId, questId, progress;
+    bsIn.Read(playerId);
+    bsIn.Read(questId);
+    bsIn.Read(progress);
+    UpdateQuestProgress(playerId, questId, progress);
+    break;
+}
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+
+
+
 
 
 
