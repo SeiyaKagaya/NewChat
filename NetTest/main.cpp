@@ -53,23 +53,25 @@ int main()
         //---------------------------------------
         std::string userName;
         while (true) {
-           
             SetConsoleColor(YELLOW);
             std::cout << "あなたのユーザー名を入力してください: ";
             SetConsoleColor(WHITE);
 
             std::getline(std::cin, userName);
 
-            // 空白のみ or 空行 の場合は弾く
+            // 半角スペースと制御文字を削除（マルチバイト安全）
             std::string trimmed = userName;
-            trimmed.erase(remove_if(trimmed.begin(), trimmed.end(), isspace), trimmed.end());
+            trimmed.erase(std::remove_if(trimmed.begin(), trimmed.end(),
+                [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }),
+                trimmed.end());
+
             if (trimmed.empty()) {
-           
                 SetConsoleColor(RED);
                 std::cout << "ユーザー名を入力してください。\n";
                 SetConsoleColor(WHITE);
                 continue;
             }
+
             break;
         }
 
@@ -118,27 +120,7 @@ int main()
 }
 
 
-//----------------------------------------------
-// サーバー接続チェック
-//----------------------------------------------
-bool CheckServerIP()
-{
-    IpChecker ipChecker;
-    std::cout << "サーバーにアクセスして IPv4/IPv6 判定中..." << std::endl;
-    std::string result = ipChecker.CheckServerIP("210.131.217.223", "/check_ip.php", 12345);
 
-    if (result == "NONE") {
-        
-        SetConsoleColor(RED);
-        std::cout << "? サーバーにアクセスできませんでした。\n";
-        SetConsoleColor(WHITE);
-        return false;
-    }
-    SetConsoleColor(GREEN);
-    std::cout << "判定結果: " << result << std::endl;
-    SetConsoleColor(WHITE);
-    return true;
-}
 
 //----------------------------------------------
 // ホスト側フロー
@@ -429,7 +411,27 @@ void ChatLoop(ChatNetwork& chatNetwork)
     if (recvThread.joinable())
         recvThread.join();
 }
+//----------------------------------------------
+// サーバー接続チェック
+//----------------------------------------------
+bool CheckServerIP()
+{
+    IpChecker ipChecker;
+    std::cout << "サーバーにアクセスして IPv4/IPv6 判定中..." << std::endl;
+    std::string result = ipChecker.CheckServerIP("210.131.217.223", "/check_ip.php", 12345);
 
+    if (result == "NONE") {
+        
+        SetConsoleColor(RED);
+        std::cout << "? サーバーにアクセスできませんでした。\n";
+        SetConsoleColor(WHITE);
+        return false;
+    }
+    SetConsoleColor(GREEN);
+    std::cout << "判定結果: " << result << std::endl;
+    SetConsoleColor(WHITE);
+    return true;
+}
 //----------------------------------------------
 // UTF-8 → CP932 変換
 //----------------------------------------------
