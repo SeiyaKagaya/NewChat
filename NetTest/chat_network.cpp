@@ -188,9 +188,10 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 
         StartRelayPollThread(roomManager, youExternalIp);//これで定期的にGetPendingClientInfo()を呼び出す。
     }
-
     else
+    {
         StartHostMonitor();
+    }
 
     // ★★ ここを追加
     m_receiveThread = std::thread(&ChatNetwork::ReceiveLoop, this);
@@ -419,6 +420,8 @@ void ChatNetwork::ReceiveLoop()
                     ResetConsoleColor();
                     m_forceExit = true;       // ★追加
                     Stop();  // クライアントは最初に戻る
+                    m_running = false;
+
                 }
                 else {
                     std::lock_guard<std::mutex> lock(m_clientsMutex);
