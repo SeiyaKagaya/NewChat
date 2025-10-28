@@ -66,19 +66,18 @@ ChatNetwork::~ChatNetwork()
         RakNet::RakPeerInterface::DestroyInstance(m_peer);
 }
 
-bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp, const std::string& protocol, RoomManager& roomManager, const std::string& youExternalIp)
+bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp, const std::string& protocol,
+    RoomManager& roomManager, const std::string& youExternalIp)
 {
     m_isHost = host;
     m_port = port;
     m_clientProtocol = protocol;
     if (host) m_hostProtocol = protocol;
 
+    // RakNet 起動
     RakNet::SocketDescriptor socketDescriptor(port, bindIp.c_str());
-    
     int maxConnections = host ? 32 : 1;
-    
     RakNet::StartupResult result = m_peer->Startup(maxConnections, &socketDescriptor, 1);
-    
     if (result != RakNet::RAKNET_STARTED)
     {
         SetConsoleColor(4);
@@ -96,108 +95,126 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
             m_tcpWaiterActive = true;
             m_tcpWaiterThread = std::thread([this]()
                 {
-                    const unsigned short listenPort = 55555;//TCPのはず
+                    const unsigned short listenPort = 55555; // TCP待ち受けポート
                     WSADATA wsa;
-                    WSAStartup(MAKEWORD(2, 2), &wsa);
+                    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+                    {
+                        std::cerr << "[TCP Waiter] WSAStartup failed\n";
+                        m_tcpWaiterActive = false;
+                        return;
+                    }
+
+                    // 一度だけリトライして安全に止める
+                    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+                    if (listener == INVALID_SOCKET)
+                    {
+                        std::cerr << "[TCP Waiter] socket() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                        WSACleanup();
+                        m_tcpWaiterActive = false;
+                        return;
+                    }
+
+                    BOOL reuse = TRUE;
+                    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
+
+                    sockaddr_in addr{};
+                    addr.sin_family = AF_INET;
+                    addr.sin_addr.s_addr = INADDR_ANY;
+                    addr.sin_port = htons(listenPort);
+
+                    if (bind(listener, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+                    {
+                        std::cerr << "[TCP Waiter] bind() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                        closesocket(listener);
+                        WSACleanup();
+                        m_tcpWaiterActive = false;
+                        return;
+                    }
+
+                    if (listen(listener, SOMAXCONN) == SOCKET_ERROR)
+                    {
+                        std::cerr << "[TCP Waiter] listen() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                        closesocket(listener);
+                        WSACleanup();
+                        m_tcpWaiterActive = false;
+                        return;
+                    }
+
+                    SetConsoleColor(2);
+                    std::cout << "[TCP] パンチ完遂待受中 (port=" << listenPort << ")...\n";
+                    ResetConsoleColor();
+
+                    fd_set readfds;
+                    timeval tv;
+                    tv.tv_sec = 2;
+                    tv.tv_usec = 0;
 
                     while (m_tcpWaiterActive)
                     {
-                        SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-                        if (listener == INVALID_SOCKET) { std::this_thread::sleep_for(std::chrono::milliseconds(500)); continue; }
+                        FD_ZERO(&readfds);
+                        FD_SET(listener, &readfds);
+                        int sel = select(static_cast<int>(listener + 1), &readfds, nullptr, nullptr, &tv);
 
-                        BOOL reuse = TRUE;
-                        setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
-
-                        sockaddr_in addr{};
-                        addr.sin_family = AF_INET;
-                        addr.sin_addr.s_addr = INADDR_ANY;
-                        addr.sin_port = htons(listenPort);
-
-                        if (bind(listener, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) { closesocket(listener); std::this_thread::sleep_for(std::chrono::milliseconds(500)); continue; }
-                        if (listen(listener, SOMAXCONN) == SOCKET_ERROR) { closesocket(listener); std::this_thread::sleep_for(std::chrono::milliseconds(500)); continue; }
-
-                        SetConsoleColor(2);
-                        std::cout << "[TCP] パンチ完遂待受中 (port=" << listenPort << ")...\n";
-                        ResetConsoleColor();
-
-                        fd_set readfds;
-                        timeval tv;
-                        tv.tv_sec = 2;
-                        tv.tv_usec = 0;
-
-                        while (m_tcpWaiterActive)
+                        if (sel > 0)
                         {
-                            FD_ZERO(&readfds);
-                            FD_SET(listener, &readfds);
-                            int sel = select(static_cast<int>(listener + 1), &readfds, nullptr, nullptr, &tv);
-
-                            if (sel > 0)
+                            SOCKET client = accept(listener, nullptr, nullptr);
+                            if (client != INVALID_SOCKET)
                             {
-                                SOCKET client = accept(listener, nullptr, nullptr);
-                                if (client != INVALID_SOCKET)
+                                char buf[128] = {};
+                                int r = recv(client, buf, sizeof(buf) - 1, 0);
+                                if (r > 0)
                                 {
-                                    char buf[128] = {};
-                                    int r = recv(client, buf, sizeof(buf) - 1, 0);
-                                    if (r > 0)
+                                    std::string s(buf, buf + r);
+                                    if (s.find("PUNCH_DONE") != std::string::npos)
                                     {
-                                        std::string s(buf, buf + r);
-                                        if (s.find("PUNCH_DONE") != std::string::npos)
+                                        SetConsoleColor(2);
+                                        std::cout << "[TCP] パンチ完遂通知受信 -> m_canSend = true\n";
+                                        ResetConsoleColor();
                                         {
-                                            SetConsoleColor(2);
-                                            std::cout << "[TCP] パンチ完遂通知受信 -> m_canSend = true\n";
-                                            ResetConsoleColor();
-                                            {
-                                                std::lock_guard<std::mutex> lk(m_canSendMutex);
-                                                m_canSend = true; // 複数人にも対応
-                                            }
-                                            StopPunchLoop(); // 個別パンチ停止
-                                            SetConsoleColor(3);
-                                            std::cout << "\n++++++++++++++新規ユーザーに送信可+++++++++++++++\n";
-                                            ResetConsoleColor();
+                                            std::lock_guard<std::mutex> lk(m_canSendMutex);
+                                            m_canSend = true;
                                         }
+                                        StopPunchLoop();
+                                        SetConsoleColor(3);
+                                        std::cout << "\n++++++++++++++新規ユーザーに送信可+++++++++++++++\n";
+                                        ResetConsoleColor();
                                     }
-                                    closesocket(client);
                                 }
+                                closesocket(client);
                             }
-                            else if (sel < 0)
-                            {
-                                std::cerr << "[TCP Waiter] select error\n";
-                                break;
-                            }
-                            std::this_thread::sleep_for(std::chrono::milliseconds(50));
                         }
-
-                        closesocket(listener);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                        else if (sel < 0)
+                        {
+                            std::cerr << "[TCP Waiter] select error: " << WSAGetLastError() << std::endl;
+                            break;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
                     }
 
+                    closesocket(listener);
                     WSACleanup();
                     m_tcpWaiterActive = false;
                 });
         }
     }
 
-    // ★★★ 追記：開始後に監視スレッド起動
+    // 監視スレッド・受信スレッド開始
     m_running = true;
     StartHeartbeat();
     if (m_isHost)
     {
         StartClientMonitor();
-
-        //StartJoinRequestPoll("my_room_name"); // ←ここで監視開始
-
-        StartRelayPollThread(roomManager, youExternalIp);//これで定期的にGetPendingClientInfo()を呼び出す。
+        StartRelayPollThread(roomManager, youExternalIp);
     }
     else
     {
         StartHostMonitor();
     }
 
-    // ★★ ここを追加
     m_receiveThread = std::thread(&ChatNetwork::ReceiveLoop, this);
-
     return true;
 }
+
 
 bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& hostProtocol, unsigned short hostPort)
 {
@@ -236,87 +253,6 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
     return false;
 }
 
-//void ChatNetwork::SendMessage(const std::string& message)
-//{
-//    bool canSend = false;
-//    {
-//        std::lock_guard<std::mutex> lk(m_canSendMutex);
-//        if (!m_canSend)
-//        {
-//            canSend = false;
-//        }
-//        else
-//        {
-//            canSend = true;
-//        }
-//    }
-//
-//    if (!canSend)
-//    {
-//        SetConsoleColor(4);
-//        std::cout << "[SendMessage] まだ送信準備ができていません\n";
-//        ResetConsoleColor();
-//        return;
-//    }
-//
-//    if (m_isHost)
-//    {
-//        std::vector<RakNet::SystemAddress> clientAddresses;
-//        {
-//            std::lock_guard<std::mutex> lock(m_clientsMutex);
-//            if (m_clients.empty())
-//            {
-//                SetConsoleColor(4);
-//                std::cout << "[SendMessage] クライアントがまだ接続されていません\n";
-//                ResetConsoleColor();
-//                return;
-//            }
-//
-//            // 送信対象のクライアントアドレスをコピー
-//            for (auto& c : m_clients)
-//                clientAddresses.push_back(c.address);
-//        }
-//
-//        // ホスト→クライアント送信時：ホスト名を付けて送信
-//        std::string senderName = m_userName.empty() ? "ホスト" : m_userName;
-//        std::string payload = senderName + "::" + message;
-//
-//        RakNet::BitStream bs;
-//        bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
-//
-//        unsigned int payloadLen = static_cast<unsigned int>(payload.size());
-//        bs.Write(payloadLen);
-//        if (payloadLen > 0) bs.Write(payload.c_str(), payloadLen);
-//
-//        for (auto& addr : clientAddresses)
-//        {
-//            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, addr, false);
-//        }
-//    }
-//    else
-//    {
-//        std::string senderName = m_userName.empty() ? "匿名" : m_userName;
-//        std::string payload = senderName + "::" + message;
-//
-//        RakNet::BitStream bs;
-//        bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
-//
-//        unsigned int len = static_cast<unsigned int>(payload.size());
-//        bs.Write(len);
-//        if (len > 0) bs.Write(payload.c_str(), len);
-//
-//        if (m_peer->NumberOfConnections() > 0)
-//            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, m_peer->GetSystemAddressFromIndex(0), false);
-//        else
-//        {
-//            SetConsoleColor(4);
-//            std::cout << "[SendMessage] 接続先ホストが存在しません\n";
-//            ResetConsoleColor();
-//        }
-//    }
-//}
-
-
 
 void ChatNetwork::ReceiveLoop()
 {
@@ -327,13 +263,20 @@ void ChatNetwork::ReceiveLoop()
             switch (packet->data[0])
             {
             case ID_NEW_INCOMING_CONNECTION:
-
+            {
                 SetConsoleColor(6);
                 std::cout << "新規接続: " << packet->systemAddress.ToString() << std::endl;
                 ResetConsoleColor();
+
                 if (m_isHost)
                 {
                     std::lock_guard<std::mutex> lock(m_clientsMutex);
+
+                    // 古い同一 SystemAddress があれば削除
+                    m_clients.erase(std::remove_if(m_clients.begin(), m_clients.end(),
+                        [&](const ClientInfo& c) { return c.address == packet->systemAddress; }),
+                        m_clients.end());
+
                     ClientInfo info;
                     info.address = packet->systemAddress;
                     info.userName = "";
@@ -341,9 +284,23 @@ void ChatNetwork::ReceiveLoop()
                     info.localPort = 0;
                     info.isSameLAN = false;
                     info.connectedTime = std::chrono::steady_clock::now();
+
                     m_clients.push_back(info);
+
+                    // 再接続時のパンチループ準備
+                    {
+                        std::lock_guard<std::mutex> lk(m_canSendMutex);
+                        m_canSend = false; // 再接続なので再度パンチ完遂まで待機
+                    }
+
+                    // ハートビートも初期化
+                    {
+                        std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
+                        m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();
+                    }
                 }
                 break;
+            }
 
             case ID_PUNCH_PACKET:
             {
@@ -418,10 +375,9 @@ void ChatNetwork::ReceiveLoop()
                     SetConsoleColor(4);
                     std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
                     ResetConsoleColor();
-                    m_forceExit = true;       // ★追加
+                    m_forceExit = true;
                     Stop();  // クライアントは最初に戻る
                     m_running = false;
-
                 }
                 else {
                     std::lock_guard<std::mutex> lock(m_clientsMutex);
@@ -431,7 +387,21 @@ void ChatNetwork::ReceiveLoop()
                         SetConsoleColor(4);
                         std::cout << "[Info] クライアント " << it->userName << " が退出しました。\n";
                         ResetConsoleColor();
-                        m_clients.erase(it); // 以降送信不要
+
+                        // 心拍管理からも削除
+                        {
+                            std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
+                            m_lastHeartbeat.erase(it->address);
+                        }
+
+                        // m_canSend リセット
+                        {
+                            std::lock_guard<std::mutex> lk(m_canSendMutex);
+                            m_canSend = false;
+                        }
+
+                        // 退出クライアント情報を即削除
+                        m_clients.erase(it);
                     }
                 }
                 break;
@@ -887,6 +857,18 @@ void ChatNetwork::CheckClientTimeouts()
                 if (c.address != it->address) {
                     m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, c.address, false);
                 }
+            }
+
+            // heartbeat も削除
+            {
+                std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
+                m_lastHeartbeat.erase(it->address);
+            }
+
+            // ★ ここに追加
+            {
+                std::lock_guard<std::mutex> lk(m_canSendMutex);
+                m_canSend = false;
             }
 
             it = m_clients.erase(it);
