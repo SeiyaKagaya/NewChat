@@ -55,7 +55,7 @@ struct ClientInfo {
     unsigned short localPort = 0; // 新規: LAN内ポート
     bool isSameLAN = false;     // 新規: 同一LAN判定
     std::string userName;       // ←追加 (バイナリ/CP932 でも扱える)
-    std::chrono::steady_clock::time_point connectedTime; // ★ 追加
+    std::chrono::steady_clock::time_point connectedTime; //接続時間
 };
 
 // 種別ごとの識別子
@@ -140,9 +140,18 @@ public:
     // ボイスデータ送信
     void SendVoicePacket(const char* audioData, int dataSize);
 
+    //スター型P2Pのリレー(サーバーリレーでない。上記３つや上記の受信時など、補助ツールに近い)
     void RelayPacket(RelayType type, const RakNet::SystemAddress& sender, const RakNet::BitStream& data);
+   
+    /* 
+    bool RelaySendData(const std::string& hostIp,
+        const std::string& fromName,
+        const std::string& payloadType,
+        const std::string& payload);*/
+
+
     
-  
+
 private:
     RakNet::RakPeerInterface* m_peer;
     bool m_isHost;

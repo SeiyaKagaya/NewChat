@@ -237,6 +237,11 @@ bool RoomManager::GetRoomList(std::map<std::string, json>& outRooms)
     return false;
 }
 
+
+
+
+
+
 //----------------------------------------------
 // WinHTTP GET
 //----------------------------------------------

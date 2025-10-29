@@ -49,16 +49,16 @@ public:
     // 部屋一覧取得
     bool GetRoomList(std::map<std::string, nlohmann::json>& outRooms);
 
-    bool HttpGet(const std::string& url, std::string& outResponse);
+    bool static HttpGet(const std::string& url, std::string& outResponse);
 
     // Shift-JIS → UTF-8
-    std::string CP932ToUTF8(const std::string& sjis);
+    std::string static CP932ToUTF8(const std::string& sjis);
 
     // URLエンコード
-    std::string UrlEncode(const std::string& value);
+    std::string static UrlEncode(const std::string& value);
 
     // UTF-8 → UTF-16
-    std::wstring UTF8ToWString(const std::string& utf8);
+    std::wstring static UTF8ToWString(const std::string& utf8);
 
  
     std::optional<PendingClientInfo> GetPendingClientInfo(const std::string& hostExternalIp);
@@ -70,6 +70,12 @@ public:
 
 
     bool RelayClientInfo(const std::string& hostExIP, const std::string& userName, const std::string& externalIp, unsigned short externalPort, const std::string& localIp, unsigned short localPort, bool sameLan);
+
+
+    bool RelaySendData(const std::string& hostIp,
+        const std::string& fromName,
+        const std::string& payloadType,
+        const std::string& payload);
 
 private:
     std::string serverUrl; // サーバーのURL格納

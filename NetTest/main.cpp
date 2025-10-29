@@ -324,7 +324,7 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 }
                 else
                 {//ホストがP2P方式
-                    conectModeUse = mode;//自身が最初に識別した可能な通信方式
+                    conectModeUse = mode;//自身が最初に識別した可能な通信方式(つまりホストがクライアントの通信方式に合わせる)
                 }
 
 

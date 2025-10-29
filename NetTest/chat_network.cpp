@@ -4,7 +4,7 @@
 //------------------------------------------------------------
 #include "chat_network.h"
 #include "main.h"
-//#include "nat_checker.h"
+#include "room_manager.h"
 
 using json = nlohmann::json;
 
@@ -380,36 +380,6 @@ void ChatNetwork::ReceiveLoop()
                     SetConsoleColor(2);
                     std::cout << "[Host]クライアントのUDPパンチ受信\n";
                     ResetConsoleColor();
-
-                    //// 追加情報を受信（長さ付きバイナリ）
-                    //std::string userName = "名無し"; // デフォルト
-
-                    //// 残っているデータがあれば JSON 長さ→JSONデータ を読む
-                    //if (bs.GetNumberOfUnreadBits() > 0)
-                    //{
-                    //    unsigned int jsonLen = 0;
-                    //    if (bs.Read(jsonLen) && jsonLen > 0)
-                    //    {
-                    //        std::string jsonStr;
-                    //        jsonStr.resize(jsonLen);
-                    //        bs.Read(&jsonStr[0], jsonLen);
-
-                    //        try {
-                    //            json j = json::parse(jsonStr);
-
-                    //            // user_name_b64 を復号して userName にする
-                    //            std::string encodedName = j.value("user_name_b64", "");
-                    //            if (!encodedName.empty()) {
-                    //                userName = FromBase64(encodedName);
-                    //            }
-                    //        }
-                    //        catch (const std::exception& e) {
-                    //            SetConsoleColor(4);
-                    //            std::cerr << "[Host] JSON parse error in PUNCH packet: " << e.what() << std::endl;
-                    //            ResetConsoleColor();
-                    //        }
-                    //    }
-                    //}
                 }
 
                 break;
@@ -708,6 +678,12 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
 void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp, ConnectionMode MyConnectMode)
 {//初回リレー受信待機(つまりHost)
 
+
+    ///memo　今後サーバーリレーでの各種データの送受信を想定しているが、
+    //現在このリレー受信部は各接続方式でも共通な"クライアント→ホストの初回リレー受信(クライアントの情報もりもり)のみを想定している"ためホストしかこれを起動しない。
+    //つまり今後ホスト/クライアントの双方が起動し、ホストは"クライアントからの初回リレー+通常サーバーリレーデータ"を受信、クライアントは"通常サーバーリレーデータ"のみ受信
+    //と形を変えなきゃいけない
+
     SetConsoleColor(3);
     std::cout << "\nサーバーからjoin受付開始\n";
     ResetConsoleColor();
@@ -740,11 +716,14 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                     // 実際に使う接続方式を決定
                     ConnectionMode selectedMode;
 
-                    if (sameLan) {
+                    if (sameLan) 
+                    {//同じWi-Fi
                         selectedMode = ConnectionMode::LocalP2P; // 同一LANならローカルP2P
                     }
-                    else {
-                        if (MyConnectMode == ConnectionMode::Relay) {
+                    else
+                    {//違うWi-Fi
+                        if (MyConnectMode == ConnectionMode::Relay) 
+                        {
                             selectedMode = ConnectionMode::Relay; // ホストがリレーならリレーで
                         }
                         else {
@@ -752,10 +731,18 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                         }
                     }
 
+
+                    //大事!!まだやってない!!!!!
+                    //クライアントごとにやり取りする方式を保存しないとヤバい!
+                    
+
+
+
                     std::cout << "クライアントから初回リレー受信\n";
 
                     // 選択方式に応じて処理
-                    switch (selectedMode) {
+                    switch (selectedMode)
+                    {
                     case ConnectionMode::LocalP2P:
                         SetConsoleColor(1);
                         std::cout << "[Host] LocalP2P: " << info.local_ip << ":" << info.local_port << " でパンチ無しで接続開始\n";
@@ -1013,6 +1000,7 @@ void ChatNetwork::StartHostMonitor()
         });
 }
 
+
 //--------------------------------------------------------------------------------------
 // ++++++++++++++++++++++++++++++ここから下は送信関係+++++++++++++++++++++++++++++++++++
 //--------------------------------------------------------------------------------------
@@ -1064,6 +1052,27 @@ void ChatNetwork::RelayPacket(RelayType type, const RakNet::SystemAddress& sende
         m_peer->Send(&data, priority, reliability, channel, addr, false);
     }
 }
+//
+//bool ChatNetwork::RelaySendData(const std::string& hostIp,
+//    const std::string& fromName,
+//    const std::string& payloadType,
+//    const std::string& payload)
+//{
+//    std::string url = "http://210.131.217.223:12345/room_manager.php?action=relay_send"
+//        + std::string("&host_ip=") + hostIp
+//        + "&from=" + RoomManager::UrlEncode(RoomManager::CP932ToUTF8(fromName))
+//        + "&payload_type=" + RoomManager::UrlEncode(payloadType)
+//        + "&payload=" + RoomManager::UrlEncode(payload);
+//
+//    std::string response;
+//    if (!RoomManager::HttpGet(url, response)) {
+//        std::cerr << "[Relay送信失敗] payload_type=" << payloadType << std::endl;
+//        return false;
+//    }
+//    return true;
+//}
+
+
 
 // ------------------------------------
 // 入力系送信（随時）クライアントのみ送信
@@ -1079,7 +1088,10 @@ void ChatNetwork::SendGameInput(const AnyTime& inputData)
     bs.Write(inputData.timeStamp);
 
     // 軽量で確実性不要：UNRELIABLE
-    m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true);
+    m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true);//単方向送信
+
+
+    
 }
 
 // ------------------------------------
@@ -1113,7 +1125,7 @@ void ChatNetwork::SendRegularUpdate(const Regular& update)
     }
     else if (m_peer->NumberOfConnections() > 0)
     {
-        //おかしい
+        //おかしい。なぜならホストからしか発信しないから
         // クライアント → ホスト
        // m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 1, m_peer->GetSystemAddressFromIndex(0), false);
     }
@@ -1162,6 +1174,7 @@ void ChatNetwork::SendMessage(const std::string& message)
     else if (m_peer->NumberOfConnections() > 0)
     {
         m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, m_peer->GetSystemAddressFromIndex(0), false);
+
     }
 }
 
