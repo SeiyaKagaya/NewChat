@@ -12,8 +12,8 @@
 
 // ä÷êîêÈåæ
 bool CheckServerIP();
-bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, unsigned short natPort, const std::string& userName,const std::string&youExternalIp);
-bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, const std::string& userName, const std::string& youExternalIp);
+bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, unsigned short natPort, const std::string& userName,const std::string&youExternalIp,ConnectionMode mode);
+bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, const std::string& userName, const std::string& youExternalIp, ConnectionMode mode);
 void ChatLoop(ChatNetwork& chatNetwork);
 std::string UTF8ToCP932(const std::string& utf8);
 std::string GetLocalIPAddress();

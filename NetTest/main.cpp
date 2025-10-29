@@ -26,7 +26,22 @@ int main()
         unsigned short port;
         
         NATChecker checker;
-        std::string type = checker.detectNATType();
+        std::string natType = checker.detectNATType();
+        ConnectionMode connectionMode = checker.decideConnectionMode(natType);
+
+        // 表示
+        SetConsoleColor(LIGHT_CYAN);
+        std::cout << "\n[通信方式 仮決定]: ";
+        if (connectionMode == ConnectionMode::P2P)
+        {
+            std::cout << "P2P通信モード\n";
+        }
+        else
+        {
+            std::cout << "Relay通信モード\n";
+        }
+        SetConsoleColor(WHITE);
+
 
         if (GetExternalAddress(ip, port)) {
             std::cout << "あなたの外部IP: " << ip << std::endl;
@@ -98,10 +113,10 @@ int main()
         chatNetwork.SetUserName(userName);
 
         if (isHost) {
-            connected = HostFlow(chatNetwork, roomManager, hostIp, port, userName, ip);
+            connected = HostFlow(chatNetwork, roomManager, hostIp, port, userName, ip, connectionMode);
         }
         else {
-            connected = ClientFlow(chatNetwork, roomManager, hostIp, userName, ip);
+            connected = ClientFlow(chatNetwork, roomManager, hostIp, userName, ip, connectionMode);
         }
 
         if (!connected) {
@@ -124,7 +139,7 @@ int main()
 //----------------------------------------------
 // ホスト側フロー
 //----------------------------------------------
-bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, unsigned short natPort, const std::string& userName, const std::string& youExternalIp)
+bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, unsigned short natPort, const std::string& userName, const std::string& youExternalIp,ConnectionMode mode)
 {
 
 
@@ -158,7 +173,7 @@ bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& h
     std::string localIp = GetLocalIPAddress();
 
     // 部屋情報にユーザー名を追加して送信
-    if (!roomManager.CreateRoom(roomName, hostIp, ipMode, maxPlayers, natPort, localIp, userName))
+    if (!roomManager.CreateRoom(roomName, hostIp, ipMode, maxPlayers, natPort, localIp, userName, mode))
     {
         SetConsoleColor(RED);
         std::cout << "部屋作成に失敗しました。\n";
@@ -168,7 +183,7 @@ bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& h
 
     std::cout << "部屋を作成しました！\n";
 
-    if (!chatNetwork.Init(true, 12345, "", ipMode, roomManager, youExternalIp)) {
+    if (!chatNetwork.Init(true, 12345, "", ipMode, roomManager, youExternalIp, mode)) {
     
         SetConsoleColor(RED);
         std::cout << "チャット初期化失敗\n";
@@ -182,14 +197,14 @@ bool HostFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& h
 //----------------------------------------------
 // クライアント側フロー
 //----------------------------------------------
-bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, const std::string& userName, const std::string& youExternalIp)
+bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string& hostIp, const std::string& userName, const std::string& youExternalIp, ConnectionMode mode)
 {
 
     IpChecker ipChecker;
     std::string ipMode = ipChecker.CheckServerIP("210.131.217.223", "/check_ip.php", 12345);
 
 
-    if (!chatNetwork.Init(false, 12345, "", ipMode, roomManager, youExternalIp)) {
+    if (!chatNetwork.Init(false, 12345, "", ipMode, roomManager, youExternalIp, mode)) {
         SetConsoleColor(RED);
         std::cout << "初期化失敗\n";
         SetConsoleColor(WHITE);
@@ -217,11 +232,12 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 std::string localIp = info.value("local_ip", "不明");
                 int natPort = info.value("nat_port", 0);
                 std::string hostName = info.value("host_name", "名無し"); // ←追加
+                std::string connMode = info.value("connection_mode", "P2P"); // ★追加
 
                 std::cout << " [" << idx << "] " << UTF8ToCP932(name)
-                    << " (ホスト: " << UTF8ToCP932(hostName) << ")" // ←追加
+                    << " (ホスト: " << UTF8ToCP932(hostName) << ")"
                     << " / 外部IP:" << ip
-                    << " / ローカルIP:" << localIp
+                    << " / 通信方式:" << connMode // ★追加
                     << " / port:" << natPort << "\n";
 
                 roomNames.push_back(name);
@@ -269,9 +285,16 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
             std::string hostExtIp = info.value("host_ip", "");
             std::string hostLocalIp = info.value("local_ip", "");
             int hostNatPortInt = info.value("nat_port", 12345);
+            std::string connMode = info.value("connection_mode", "P2P"); // ★追加
+
             unsigned short hostNatPort = static_cast<unsigned short>(hostNatPortInt);
 
             bool sameLAN = false; // ホストとの同一LAN判定はここで決める
+
+
+            ConnectionMode conectModeUse = mode;//最終的に決まった通信方式(とりあえず初期値を自身の仮通信方式)
+
+
 
             // 同一LAN判定
             if (IsSameLAN(myLocalIp, hostLocalIp)) {
@@ -285,11 +308,26 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                 hostNatPort = 12345;
 
                 sameLAN = true;
+
+                conectModeUse = ConnectionMode::LocalP2P;
             }
             else {
                 hostIp = hostExtIp;//外部のまま
                 // 外部接続の場合は NATマッピングポートを使用
                 hostNatPort = hostNatPort;
+
+                ConnectionMode hostMode = StringToConnectionMode(connMode);
+
+                if (hostMode == ConnectionMode::Relay)
+                {//ホストがリレー方式
+                    conectModeUse = ConnectionMode::Relay;//ホストに合わせる
+                }
+                else
+                {//ホストがP2P方式
+                    conectModeUse = mode;//自身が最初に識別した可能な通信方式
+                }
+
+
             }
 
             std::cout << "接続先IP: " << hostIp << " / port: " << hostNatPort << std::endl;
@@ -305,25 +343,18 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
                     myLocalIp,      // ローカルIP
                     12345,          // ローカルポート（自分がBindしているポート）
                     sameLAN,        // 同一LANかどうか
-                    userName        //ユーザーネーム
+                    userName,        //ユーザーネーム
+                    conectModeUse
                 );
             }
 
-
-            //リレーするときは外部のアドレスを使用
+            //初回リレー送信
             roomManager.RelayClientInfo(hostExtIp, userName,
                 myExtIp, myExtPort, myLocalIp, 12345, sameLAN);
 
 
-
-
-
-            // クライアントフロー内
-           // chatNetwork.StartClientRelayPoll(roomManager, roomNames[selectedRoom - 1], sameLAN);
-
-
             //パンチ開始(Client→ホスト)
-            if (chatNetwork.ConnectToHost(hostIp, ipMode, hostNatPort)) 
+            if (chatNetwork.ConnectToHost(hostIp, ipMode, hostNatPort, conectModeUse))
             {
                 std::cout << "ホストに接続試行中...\n";
                 return true;

@@ -153,8 +153,11 @@ bool RoomManager::CreateRoom(const std::string& roomName,
     int maxPlayers,
     unsigned short natPort,
     const std::string& localIp,
-    const std::string& hostName)
+    const std::string& hostName, 
+    ConnectionMode mode)
 {
+    std::string modeStr = (mode == ConnectionMode::Relay) ? "Relay" : "P2P"; // Åöí«â¡
+
     std::string utf8Room = CP932ToUTF8(roomName);
     std::string encodedRoom = UrlEncode(utf8Room);
 
@@ -167,7 +170,8 @@ bool RoomManager::CreateRoom(const std::string& roomName,
         + "&protocol=" + ipMode
         + "&nat_port=" + std::to_string(natPort)
         + "&local_ip=" + localIp
-        + "&host_name=" + encodedHostName;
+        + "&host_name=" + encodedHostName
+        + "&connection_mode=" + modeStr; // Åöí«â¡;
 
     //std::cout << "[DEBUG] CreateRoom URL: " << url << std::endl;
 

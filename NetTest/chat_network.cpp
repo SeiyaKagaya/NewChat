@@ -67,7 +67,7 @@ ChatNetwork::~ChatNetwork()
 }
 
 bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp, const std::string& protocol,
-    RoomManager& roomManager, const std::string& youExternalIp)
+    RoomManager& roomManager, const std::string& youExternalIp, ConnectionMode MyConnectMode)
 {
     m_isHost = host;
     m_port = port;
@@ -204,7 +204,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
     if (m_isHost)
     {
         StartClientMonitor();
-        StartRelayPollThread(roomManager, youExternalIp);
+        StartRelayPollThread(roomManager, youExternalIp, MyConnectMode);//ホスト1-リレー受信待機
     }
     else
     {
@@ -216,8 +216,9 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 }
 
 
-bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& hostProtocol, unsigned short hostPort)
-{
+bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& hostProtocol, unsigned short hostPort, ConnectionMode MyConnectMode)
+{//クライアント側、
+
     if (m_isHost) return false;
     if (hostProtocol != "BOTH" && hostProtocol != m_clientProtocol)
     {
@@ -232,20 +233,55 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
 
     RakNet::ConnectionAttemptResult r = m_peer->Connect(hostIp.c_str(), hostPort, nullptr, 0);
 
+    // 選択方式に応じて処理
+    switch (MyConnectMode) {
+    case ConnectionMode::LocalP2P:
+        //なんならここでTCP送信
 
-    if (r == RakNet::CONNECTION_ATTEMPT_STARTED)
-    {
-        SetConsoleColor(2);
-        std::cout << "[Client] クライアント→ホストパンチループ開始: " << hostIp << ":" << hostPort << std::endl;
-        ResetConsoleColor();
+        if (r == RakNet::CONNECTION_ATTEMPT_STARTED)
+        {
+            SetConsoleColor(2);
+            std::cout << "ローカルP2Pのためパンチホールは行いません" << hostIp << ":" << hostPort << std::endl;
+            ResetConsoleColor();
 
-        // ホストのハートビート初期値を登録
-        m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+            // ホストのハートビート初期値を登録
+            m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+            return true;
+        }
 
-        StartPunchLoop(hostIp, hostPort, false);
-        return true;
+        break;
+
+    case ConnectionMode::P2P:
+        
+        if (r == RakNet::CONNECTION_ATTEMPT_STARTED)
+        {
+            SetConsoleColor(2);
+            std::cout << "[Client] クライアント→ホストパンチループ開始: " << hostIp << ":" << hostPort << std::endl;
+            ResetConsoleColor();
+
+            // ホストのハートビート初期値を登録
+            m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+
+            StartPunchLoop(hostIp, hostPort, false);
+            return true;
+        }
+        break;
+
+    case ConnectionMode::Relay:
+        //なんならここでTCP送信
+
+        if (r == RakNet::CONNECTION_ATTEMPT_STARTED)
+        {
+            SetConsoleColor(2);
+            std::cout << "リレー通信のためパンチホールは行いません" << hostIp << ":" << hostPort << std::endl;
+            ResetConsoleColor();
+
+            // ホストのハートビート初期値を登録
+            m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+            return true;
+        }
+        break;
     }
-
 
     SetConsoleColor(4);
     std::cout << "接続失敗\n";
@@ -336,35 +372,35 @@ void ChatNetwork::ReceiveLoop()
                     std::cout << "[Host]クライアントのUDPパンチ受信\n";
                     ResetConsoleColor();
 
-                    // 追加情報を受信（長さ付きバイナリ）
-                    std::string userName = "名無し"; // デフォルト
+                    //// 追加情報を受信（長さ付きバイナリ）
+                    //std::string userName = "名無し"; // デフォルト
 
-                    // 残っているデータがあれば JSON 長さ→JSONデータ を読む
-                    if (bs.GetNumberOfUnreadBits() > 0)
-                    {
-                        unsigned int jsonLen = 0;
-                        if (bs.Read(jsonLen) && jsonLen > 0)
-                        {
-                            std::string jsonStr;
-                            jsonStr.resize(jsonLen);
-                            bs.Read(&jsonStr[0], jsonLen);
+                    //// 残っているデータがあれば JSON 長さ→JSONデータ を読む
+                    //if (bs.GetNumberOfUnreadBits() > 0)
+                    //{
+                    //    unsigned int jsonLen = 0;
+                    //    if (bs.Read(jsonLen) && jsonLen > 0)
+                    //    {
+                    //        std::string jsonStr;
+                    //        jsonStr.resize(jsonLen);
+                    //        bs.Read(&jsonStr[0], jsonLen);
 
-                            try {
-                                json j = json::parse(jsonStr);
+                    //        try {
+                    //            json j = json::parse(jsonStr);
 
-                                // user_name_b64 を復号して userName にする
-                                std::string encodedName = j.value("user_name_b64", "");
-                                if (!encodedName.empty()) {
-                                    userName = FromBase64(encodedName);
-                                }
-                            }
-                            catch (const std::exception& e) {
-                                SetConsoleColor(4);
-                                std::cerr << "[Host] JSON parse error in PUNCH packet: " << e.what() << std::endl;
-                                ResetConsoleColor();
-                            }
-                        }
-                    }
+                    //            // user_name_b64 を復号して userName にする
+                    //            std::string encodedName = j.value("user_name_b64", "");
+                    //            if (!encodedName.empty()) {
+                    //                userName = FromBase64(encodedName);
+                    //            }
+                    //        }
+                    //        catch (const std::exception& e) {
+                    //            SetConsoleColor(4);
+                    //            std::cerr << "[Host] JSON parse error in PUNCH packet: " << e.what() << std::endl;
+                    //            ResetConsoleColor();
+                    //        }
+                    //    }
+                    //}
                 }
 
                 break;
@@ -528,7 +564,7 @@ void ChatNetwork::ReceiveLoop()
 
 void ChatNetwork::SetPendingPunch(const std::string& extIp, unsigned short extPort,
     const std::string& localIp, unsigned short localPort,
-    bool sameLAN, const std::string& userName)
+    bool sameLAN, const std::string& userName, ConnectionMode  connectionMode)
 {
     std::lock_guard<std::mutex> lock(m_pendingMutex);
     m_pendingPunchIp = extIp;
@@ -537,12 +573,15 @@ void ChatNetwork::SetPendingPunch(const std::string& extIp, unsigned short extPo
     m_pendingLocalPort = localPort;
     m_pendingSameLAN = sameLAN;
     m_pendingUserName = userName; // raw bytes as provided (could be CP932)
+    m_pendingConnectionMode = connectionMode; // ★追加
     m_hasPendingPunch = true;
 }
 
 void ChatNetwork::StartPunchLoop(const std::string& targetIp, unsigned short targetPort, bool isHostSide)
-{
+{//パンチループ開始部(ホスト/クライアント共通)
+
     bool expected = false;
+    
     if (!m_punchLoopActive.compare_exchange_strong(expected, true)) return;
 
     m_punchThread = std::thread([this, targetIp, targetPort, isHostSide]()
@@ -565,6 +604,8 @@ void ChatNetwork::StartPunchLoop(const std::string& targetIp, unsigned short tar
                     j["local_ip"] = m_pendingLocalIp;
                     j["local_port"] = m_pendingLocalPort;
                     j["same_lan"] = m_pendingSameLAN;
+
+                    j["connection_mode"] = m_pendingConnectionMode; // ★追加
 
                     // user_name を Base64 化して入れる（ASCII のみ）
                     j["user_name_b64"] = ToBase64(m_pendingUserName);
@@ -655,6 +696,93 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
     WSACleanup();
 }
 
+void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp, ConnectionMode MyConnectMode)
+{//初回リレー受信待機(つまりHost)
+
+    SetConsoleColor(3);
+    std::cout << "\nサーバーからjoin受付開始\n";
+    ResetConsoleColor();
+
+    running = true; // スレッドループ制御用フラグ
+
+    std::thread([this, &roomManager, hostExternalIp, MyConnectMode]()
+        {
+            while (running) {
+                auto infoOpt = roomManager.GetPendingClientInfo(hostExternalIp);
+
+                if (infoOpt.has_value()) {
+                    auto info = infoOpt.value();
+                    std::cout << "[Relay] Client info received via server relay:\n";
+                    std::cout << "  external_ip: " << info.external_ip << "\n";
+                    std::cout << "  external_port: " << info.external_port << "\n";
+                    std::cout << "  local_ip: " << info.local_ip << "\n";
+                    std::cout << "  local_port: " << info.local_port << "\n";
+                    std::cout << "  client_name: " << info.client_name << "\n";
+                    std::cout << "  client_connection_mode: " << static_cast<int>(info.connection_mode) << "\n";
+
+                    //--------------------------------------------------
+                    // 🔍 同一LAN判定
+                    //--------------------------------------------------
+                    bool sameLan = IsSameLAN(GetLocalIPAddress(), info.local_ip);
+
+                    // クライアント側接続モード
+                    ConnectionMode clientMode = info.connection_mode;
+
+                    // 実際に使う接続方式を決定
+                    ConnectionMode selectedMode;
+
+                    if (sameLan) {
+                        selectedMode = ConnectionMode::LocalP2P; // 同一LANならローカルP2P
+                    }
+                    else {
+                        if (MyConnectMode == ConnectionMode::Relay) {
+                            selectedMode = ConnectionMode::Relay; // ホストがリレーならリレーで
+                        }
+                        else {
+                            selectedMode = clientMode; // ホストがP2Pならクライアントに合わせる
+                        }
+                    }
+
+                    std::cout << "クライアントから初回リレー受信\n";
+
+                    // 選択方式に応じて処理
+                    switch (selectedMode) {
+                    case ConnectionMode::LocalP2P:
+                        SetConsoleColor(1);
+                        std::cout << "[Host] LocalP2P: " << info.local_ip << ":" << info.local_port << " でパンチ無しで接続開始\n";
+                        ResetConsoleColor();
+
+                        //パンチ無しでクライアント側のTCP通信確率宣言[パンチ受信で送り返すやつ]をまつ[ホスト側]
+                        //つまりTCPをもらったら通信開始
+                                                
+                        break;
+
+                    case ConnectionMode::P2P:
+                        SetConsoleColor(1);
+                        std::cout << "[Host] P2P: " << info.external_ip << ":" << info.external_port << " でパンチ開始\n";
+                        ResetConsoleColor();
+
+                        //通常通りUDPパンチ開始
+                        StartPunchLoop(info.external_ip, info.external_port, true);//ホスト→クライアント
+
+                        break;
+
+                    case ConnectionMode::Relay:
+                        SetConsoleColor(1);
+                        std::cout << "[Host] Relay: クライアントとリレーで通信開始\n";
+                        ResetConsoleColor();
+
+                        //UDPパンチ無しでリレーにてクライアント側のTCP通信確率宣言[パンチ受信で送り返すやつ]をまつ[ホスト側]
+                        //つまりTCPをもらったら通信開始
+
+                        break;
+                    }
+                }
+
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }).detach();
+}
 
 
 void ChatNetwork::Stop()
@@ -687,69 +815,6 @@ const RakNet::SystemAddress& ChatNetwork::GetMyAddress() const
 void ChatNetwork::SetUserName(const std::string& name)
 {
     m_userName = name;
-}
-void ChatNetwork::SetConsoleColor(WORD color)
-{
-
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    SetConsoleTextAttribute(hConsole, color);
-}
-void ChatNetwork::ResetConsoleColor()
-{
-    SetConsoleColor(7); // 標準グレー
-}
-
-
-
-
-// -----------------------------
-// Base64 ユーティリティ
-// -----------------------------
-std::string ChatNetwork::ToBase64(const std::string& input)
-{
-    static const char table[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string output;
-    int val = 0, valb = -6;
-    for (unsigned char c : input) {
-        val = (val << 8) + c;
-        valb += 8;
-        while (valb >= 0) {
-            output.push_back(table[(val >> valb) & 0x3F]);
-            valb -= 6;
-        }
-    }
-    if (valb > -6) output.push_back(table[((val << 8) >> (valb + 8)) & 0x3F]);
-    while (output.size() % 4) output.push_back('=');
-    return output;
-}
-
-std::string ChatNetwork::FromBase64(const std::string& input)
-{
-    static int T[256];
-    static bool init = false;
-    if (!init) {
-        init = true;
-        for (int i = 0; i < 256; ++i) T[i] = -1;
-        for (int i = 'A'; i <= 'Z'; ++i) T[i] = i - 'A';
-        for (int i = 'a'; i <= 'z'; ++i) T[i] = i - 'a' + 26;
-        for (int i = '0'; i <= '9'; ++i) T[i] = i - '0' + 52;
-        T[(unsigned char)'+'] = 62;
-        T[(unsigned char)'/'] = 63;
-    }
-
-    std::string out;
-    int val = 0, valb = -8;
-    for (unsigned char c : input) {
-        if (T[c] == -1) break;
-        val = (val << 6) + T[c];
-        valb += 6;
-        if (valb >= 0) {
-            out.push_back(char((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    return out;
 }
 
 void ChatNetwork::SendLeaveNotification()
@@ -881,6 +946,10 @@ void ChatNetwork::CheckClientTimeouts()
 }
 
 
+
+
+
+
 std::optional<std::chrono::steady_clock::time_point> ChatNetwork::GetLastHeartbeatOpt(RakNet::SystemAddress addr)
 {
     std::lock_guard<std::mutex> lock(m_heartbeatMutex);
@@ -889,82 +958,6 @@ std::optional<std::chrono::steady_clock::time_point> ChatNetwork::GetLastHeartbe
         return it->second;
     return std::nullopt;
 }
-
-
-void ChatNetwork::StartRelayPollThread(RoomManager& roomManager,const std::string& hostExternalIp)
-{// UDP待機スレッド開始時などで呼ばれる
-
-    SetConsoleColor(3);
-    std::cout << "\nサーバーからjoin受付開始\n";
-    ResetConsoleColor();
-
-    running = true; // スレッドループ制御用フラグ
-
-  // 引数をラムダでキャプチャ
-    std::thread([this, &roomManager, hostExternalIp]() {
-        while (running) {
-            auto infoOpt = roomManager.GetPendingClientInfo(hostExternalIp);
-
-            if (infoOpt.has_value()) {
-                auto info = infoOpt.value();
-                std::cout << "[Relay] Client info received via server relay:\n";
-                std::cout << "  external_ip: " << info.external_ip << "\n";
-                std::cout << "  external_port: " << info.external_port << "\n";
-          
-                std::cout << "  local_ip: " << info.local_ip << "\n";
-                std::cout << "  local_port: " << info.local_port << "\n";
-                std::cout << "  client_name: " << info.client_name << "\n";
-
-                //--------------------------------------------------
-                // 🔍 同一LAN判定 (シンプルで確実なロジック)
-                //--------------------------------------------------
-                bool sameLan = false;
-
-                // 自分のローカルIPを取得
-                std::string myLocalIp = GetLocalIPAddress(); // ← 既にある関数を想定（なければ下に作る）
-
-                if (IsSameLAN(myLocalIp,info.local_ip))
-                {
-                    SetConsoleColor(1);
-                    std::cout << "[Host] 同一LAN検出: " << info.local_ip << ":" << info.local_port << " でパンチ開始\n";
-                    ResetConsoleColor();
-
-                    StartPunchLoop(info.local_ip, info.local_port, true);
-                }
-                else
-                {
-                    SetConsoleColor(1);
-                    std::cout << "[Host] グローバル接続: " << info.external_ip << ":" << info.external_port << " でパンチ開始\n";
-                    ResetConsoleColor();
-
-                    StartPunchLoop(info.external_ip, info.external_port, true);
-                }
-            }
-
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        }).detach();
-}
-//
-//void ChatNetwork::StartClientRelayPoll(RoomManager& roomManager, const std::string& roomName, bool isSameLan, const std::string& hostExternalIp)
-//{
-//    m_clientRelayPollThread = std::thread([this, &roomManager, roomName]() {
-//        while (m_running) {
-//            auto info = roomManager.GetPendingClientInfo(roomName, hostExternalIp); // ← インスタンス経由で呼ぶ
-//            if (info.has_value()) {
-//                const std::string& clientIp = info->external_ip;
-//                unsigned short clientPort = static_cast<unsigned short>(info->external_port);
-//
-//                printf("[Relay] New client info via server: %s:%hu\n", clientIp.c_str(), clientPort);
-//
-//                // ここでホスト→クライアントにパンチ開始
-//                StartPunchLoop(clientIp, clientPort, true);
-//            }
-//            std::this_thread::sleep_for(std::chrono::seconds(1));
-//        }
-//        });
-//}
-
 
 // ============================================================
 // 新規追加：ホスト／クライアントの生存監視スレッド
@@ -1159,6 +1152,73 @@ void ChatNetwork::SendMessage(const std::string& message)
     }
     else if (m_peer->NumberOfConnections() > 0)
     {
-        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 2, m_peer->GetSystemAddressFromIndex(0), false);
+        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, m_peer->GetSystemAddressFromIndex(0), false);
     }
+}
+
+
+
+
+
+
+
+// -----------------------------
+// Base64 ユーティリティ
+// -----------------------------
+std::string ChatNetwork::ToBase64(const std::string& input)
+{
+    static const char table[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string output;
+    int val = 0, valb = -6;
+    for (unsigned char c : input) {
+        val = (val << 8) + c;
+        valb += 8;
+        while (valb >= 0) {
+            output.push_back(table[(val >> valb) & 0x3F]);
+            valb -= 6;
+        }
+    }
+    if (valb > -6) output.push_back(table[((val << 8) >> (valb + 8)) & 0x3F]);
+    while (output.size() % 4) output.push_back('=');
+    return output;
+}
+
+std::string ChatNetwork::FromBase64(const std::string& input)
+{
+    static int T[256];
+    static bool init = false;
+    if (!init) {
+        init = true;
+        for (int i = 0; i < 256; ++i) T[i] = -1;
+        for (int i = 'A'; i <= 'Z'; ++i) T[i] = i - 'A';
+        for (int i = 'a'; i <= 'z'; ++i) T[i] = i - 'a' + 26;
+        for (int i = '0'; i <= '9'; ++i) T[i] = i - '0' + 52;
+        T[(unsigned char)'+'] = 62;
+        T[(unsigned char)'/'] = 63;
+    }
+
+    std::string out;
+    int val = 0, valb = -8;
+    for (unsigned char c : input) {
+        if (T[c] == -1) break;
+        val = (val << 6) + T[c];
+        valb += 6;
+        if (valb >= 0) {
+            out.push_back(char((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return out;
+}
+
+void ChatNetwork::SetConsoleColor(WORD color)
+{
+
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(hConsole, color);
+}
+void ChatNetwork::ResetConsoleColor()
+{
+    SetConsoleColor(7); // 標準グレー
 }

@@ -6,6 +6,7 @@
 #define _ROOM_MANAGER_H_
 
 #include "includemanager.h"
+#include "nat_checker.h"
 
 
 
@@ -16,6 +17,7 @@ struct PendingClientInfo {
     std::string local_ip;
     int local_port;
     std::string client_name;
+    ConnectionMode connection_mode; // 追加
 };
 
 class RoomManager {
@@ -33,7 +35,8 @@ public:
         int maxPlayers,
         unsigned short natPort,
         const std::string& localIp,
-        const std::string& hostName);
+        const std::string& hostName,
+        ConnectionMode mode);
 
     //// 部屋への入室通知（リレー用）
     //bool JoinRoom(const std::string& roomName,

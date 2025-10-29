@@ -248,3 +248,18 @@ std::string NATChecker::detectNATType() {
     return natType;
 }
 
+ConnectionMode NATChecker::decideConnectionMode(const std::string& natType)
+{
+    if (natType == "Full Cone NAT") {
+        return ConnectionMode::P2P;
+    }
+    else if (natType == "Restricted / Port-Restricted Cone NAT") {
+        return ConnectionMode::Relay; // 制限付きなのでRelay優先
+    }
+    else if (natType == "Symmetric NAT") {
+        return ConnectionMode::Relay;
+    }
+    else {
+        return ConnectionMode::Relay; // 不明なら安全側
+    }
+}

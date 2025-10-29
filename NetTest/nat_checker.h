@@ -12,10 +12,19 @@ struct ExternalAddress {
     int port;
 };
 
+enum class ConnectionMode {
+    P2P,
+    LocalP2P,
+    Relay
+};
+
+
 class NATChecker {
 public:
     NATChecker();
     ~NATChecker();
+
+    ConnectionMode decideConnectionMode(const std::string& natType);
 
     std::string detectNATType();
     ExternalAddress getExternalAddress(const std::string& stunIP, int stunPort);
@@ -26,5 +35,21 @@ private:
     ExternalAddress parseStunResponse(char* response, int len);
     std::string classify(const ExternalAddress& addr1, const ExternalAddress& addr2, const ExternalAddress& addr3);
 };
+
+inline ConnectionMode StringToConnectionMode(const std::string& str)
+{
+    if (str == "Relay")
+    {
+        return ConnectionMode::Relay;
+    }
+    else if (str == "LocalP2P")
+    {
+        return ConnectionMode::LocalP2P;
+    }
+    else
+    {
+        return ConnectionMode::P2P;
+    }
+}
 
 #endif

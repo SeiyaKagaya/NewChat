@@ -9,7 +9,7 @@
 
 #include "includemanager.h"
 #include "room_manager.h"
-
+#include "nat_checker.h"
 
 
 
@@ -72,10 +72,10 @@ public:
     ~ChatNetwork();
 
     // 初期化
-    bool Init(bool host, unsigned short port, const std::string& bindIp, const std::string& protocol, RoomManager& roomManager, const std::string& youExternalIp);
+    bool Init(bool host, unsigned short port, const std::string& bindIp, const std::string& protocol, RoomManager& roomManager, const std::string& youExternalIp, ConnectionMode MyConnectMode);
 
     // ホストへ接続
-    bool ConnectToHost(const std::string& hostIp, const std::string& hostProtocol, unsigned short hostPort);
+    bool ConnectToHost(const std::string& hostIp, const std::string& hostProtocol, unsigned short hostPort, ConnectionMode MyConnectMode);
 
     // メッセージ送信
     void SendMessage(const std::string& message);
@@ -92,7 +92,7 @@ public:
     // クライアントが STUN で得た外部アドレスをチャットに渡す（キュー格納）
     void SetPendingPunch(const std::string& extIp, unsigned short extPort,
         const std::string& localIp, unsigned short localPort,
-        bool sameLAN, const std::string& userName);
+        bool sameLAN, const std::string& userName, ConnectionMode  connectionMode);
 
     // パンチループ制御
     void StartPunchLoop(const std::string& targetIp, unsigned short targetPort, bool isHostSide);
@@ -123,7 +123,7 @@ public:
 
     std::optional<std::chrono::steady_clock::time_point> GetLastHeartbeatOpt(RakNet::SystemAddress addr);
 
-    void StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp);
+    void StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp, ConnectionMode MyConnectMode);
 
     void StartClientMonitor();  // ホストがクライアント生存確認
     void StartHostMonitor();    // クライアントがホスト生存確認
@@ -205,6 +205,8 @@ private:
     std::thread m_clientRelayPollThread;
 
     bool running = false;  // スレッド動作用フラグ
+
+    ConnectionMode m_pendingConnectionMode = ConnectionMode::Relay; // ←追加
 };
 
 
