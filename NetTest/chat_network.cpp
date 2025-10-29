@@ -808,6 +808,7 @@ const RakNet::SystemAddress& ChatNetwork::GetMyAddress() const
 {
     return m_peer->GetMyBoundAddress();
 }
+
 void ChatNetwork::SetUserName(const std::string& name)
 {
     m_userName = name;
@@ -872,6 +873,7 @@ void ChatNetwork::StopHeartbeat()
     if (!m_heartbeatActive.compare_exchange_strong(expected, false)) return;
     if (m_heartbeatThread.joinable()) m_heartbeatThread.join();
 }
+
 RakNet::SystemAddress ChatNetwork::GetMyHostAddress() const
 {
     if (!m_isHost && m_peer->NumberOfConnections() > 0)
@@ -880,6 +882,7 @@ RakNet::SystemAddress ChatNetwork::GetMyHostAddress() const
     }
     return RakNet::UNASSIGNED_SYSTEM_ADDRESS;
 }
+
 std::chrono::steady_clock::time_point ChatNetwork::GetLastHeartbeat(RakNet::SystemAddress addr)
 {
     std::lock_guard<std::mutex> lock(m_heartbeatMutex);
@@ -888,6 +891,7 @@ std::chrono::steady_clock::time_point ChatNetwork::GetLastHeartbeat(RakNet::Syst
         return it->second;
     return std::chrono::steady_clock::now() - std::chrono::seconds(100); // 過去時間を返す（タイムアウト扱い）
 }
+
 void ChatNetwork::CheckClientTimeouts()
 {
     auto now = std::chrono::steady_clock::now();
@@ -940,11 +944,6 @@ void ChatNetwork::CheckClientTimeouts()
         }
     }
 }
-
-
-
-
-
 
 std::optional<std::chrono::steady_clock::time_point> ChatNetwork::GetLastHeartbeatOpt(RakNet::SystemAddress addr)
 {
@@ -1234,6 +1233,11 @@ std::string ChatNetwork::FromBase64(const std::string& input)
     return out;
 }
 
+
+
+
+
+//近いうちこれを削除
 void ChatNetwork::SetConsoleColor(WORD color)
 {
 

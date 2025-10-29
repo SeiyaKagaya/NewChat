@@ -143,14 +143,7 @@ public:
     //スター型P2Pのリレー(サーバーリレーでない。上記３つや上記の受信時など、補助ツールに近い)
     void RelayPacket(RelayType type, const RakNet::SystemAddress& sender, const RakNet::BitStream& data);
    
-    /* 
-    bool RelaySendData(const std::string& hostIp,
-        const std::string& fromName,
-        const std::string& payloadType,
-        const std::string& payload);*/
 
-
-    
 
 private:
     RakNet::RakPeerInterface* m_peer;
