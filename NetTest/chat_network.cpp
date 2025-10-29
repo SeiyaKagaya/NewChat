@@ -4,6 +4,7 @@
 //------------------------------------------------------------
 #include "chat_network.h"
 #include "main.h"
+//#include "nat_checker.h"
 
 using json = nlohmann::json;
 
@@ -246,6 +247,10 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
 
             // ホストのハートビート初期値を登録
             m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+
+            //なんならここでTCP送信
+            SendPunchDoneTCP(m_hostIp, 55555);
+
             return true;
         }
 
@@ -268,7 +273,7 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
         break;
 
     case ConnectionMode::Relay:
-        //なんならここでTCP送信
+       
 
         if (r == RakNet::CONNECTION_ATTEMPT_STARTED)
         {
@@ -278,6 +283,10 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
 
             // ホストのハートビート初期値を登録
             m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+
+            //なんならここでTCP送信
+            SendPunchDoneTCP(m_hostIp, 55555);
+
             return true;
         }
         break;
