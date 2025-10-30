@@ -998,13 +998,13 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
 
 
 // ------------------------------------
-// 入力系送信（随時）クライアントのみ送信
+// 入力系送信（随時）(クライアント→ホストのみ)
 // ------------------------------------
 void ChatNetwork::SendGameInput(const AnyTime& inputData)
 {
     if (!m_peer) return;
 
-    // クライアント送信は自分のモードに従う
+    //リレーならリレーで送信
     if (m_pendingConnectionMode == ConnectionMode::Relay) {
         std::ostringstream ss;
         ss << inputData.playerId << "," << inputData.inputFlags << "," << inputData.timeStamp;
@@ -1012,24 +1012,29 @@ void ChatNetwork::SendGameInput(const AnyTime& inputData)
         return;
     }
 
-    // P2P
+
+    // P2P または LocalP2P
     RakNet::BitStream bs;
     bs.Write((RakNet::MessageID)ID_GAME_INPUT);
     bs.Write(inputData.playerId);
     bs.Write(inputData.inputFlags);
     bs.Write(inputData.timeStamp);
-    m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true);
+
+    if (m_peer->NumberOfConnections() > 0)
+    {
+        RakNet::SystemAddress target = m_peer->GetSystemAddressFromIndex(0);
+        m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE, 0, target, false);
+    }
 }
 
 
+
 // ------------------------------------
-// 定期更新送信（ホスト ）
+// 定期更新送信（ホスト→クライアントのみ）
 // ------------------------------------
 void ChatNetwork::SendRegularUpdate(const Regular& update)
 {
-    if (!m_peer) return;
-
-    if (!m_isHost) return;
+    if (!m_peer || !m_isHost) return;
 
     std::lock_guard<std::mutex> lock(m_clientsMutex);
 
@@ -1060,7 +1065,16 @@ void ChatNetwork::SendRegularUpdate(const Regular& update)
             bs.Write(update.angularVelocity.y);
             bs.Write(update.angularVelocity.z);
 
-            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 1, c.address, false);
+            RakNet::SystemAddress targetAddr;
+            if (c.connectionMode == ConnectionMode::LocalP2P)
+            {
+                targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+            }
+            else
+            {
+                targetAddr = c.address;
+            }
+            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 1, targetAddr, false);
         }
     }
 }
@@ -1103,8 +1117,19 @@ void ChatNetwork::SendVoicePacket(const char* audioData, int dataSize)
             }
             case ConnectionMode::P2P:
             case ConnectionMode::LocalP2P:
-                m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, c.address, false);
+            {
+                RakNet::SystemAddress targetAddr;
+                if (c.connectionMode == ConnectionMode::LocalP2P)
+                {
+                    targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                }
+                else
+                {
+                    targetAddr = c.address;
+                }
+                m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, targetAddr, false);
                 break;
+            }
             }
         }
     }
@@ -1112,10 +1137,12 @@ void ChatNetwork::SendVoicePacket(const char* audioData, int dataSize)
     {
         // クライアント P2P 送信
         if (m_peer->NumberOfConnections() > 0)
-            m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, m_peer->GetSystemAddressFromIndex(0), false);
+        {
+            RakNet::SystemAddress target = m_peer->GetSystemAddressFromIndex(0);
+            m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, target, false);
+        }
     }
 }
-
 
 
 
@@ -1130,7 +1157,6 @@ void ChatNetwork::SendMessage(const std::string& message)
     bs.Write(len);
     bs.Write(payload.c_str(), len);
 
-    // ホストが全クライアントに送信する場合
     if (m_isHost)
     {
         std::lock_guard<std::mutex> lock(m_clientsMutex);
@@ -1153,36 +1179,39 @@ void ChatNetwork::SendMessage(const std::string& message)
 
             case ConnectionMode::P2P:
             case ConnectionMode::LocalP2P:
-                if (c.guid != RakNet::UNASSIGNED_RAKNET_GUID)
-                    m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, c.guid, false);
+            {
+                // LocalP2P は GUID を無視して explicit に SystemAddress を作る
+                RakNet::SystemAddress targetAddr;
+                if (c.connectionMode == ConnectionMode::LocalP2P)
+                {
+                    targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                }
                 else
-                    m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, c.address, false);
+                {
+                    targetAddr = c.address;
+                }
+                m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, targetAddr, false);
                 break;
             }
+            }
         }
-
     }
-    else if (!m_isHost)
-    {// クライアント側
+    else // クライアント側
+    {
         if (m_pendingConnectionMode == ConnectionMode::Relay)
         {
             RelaySendDataToServer(m_hostIp, m_userName, "chat", message);
-            return;
         }
         else // LocalP2P または P2P
         {
-            // 接続先アドレスを取得
             if (m_peer->NumberOfConnections() > 0)
             {
                 RakNet::SystemAddress target = m_peer->GetSystemAddressFromIndex(0);
                 m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, target, false);
             }
-            return;
         }
     }
-
 }
-
 
 
 
