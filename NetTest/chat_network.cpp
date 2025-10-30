@@ -171,14 +171,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
                                         SetConsoleColor(2);
                                         std::cout << "[TCP] パンチ完遂通知受信 -> m_canSend = true\n";
                                         ResetConsoleColor();
-                                        {
-                                            std::lock_guard<std::mutex> lk(m_canSendMutex);
-                                            m_canSend = true;
-                                        }
-                                        StopPunchLoop();
-                                        SetConsoleColor(3);
-                                        std::cout << "\n++++++++++++++新規ユーザーに送信可+++++++++++++++\n";
-                                        ResetConsoleColor();
+                                        SetSendOk();
                                     }
                                 }
                                 closesocket(client);
@@ -289,10 +282,10 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
             ResetConsoleColor();
 
             // ホストのハートビート初期値を登録
-            m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+            //m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
 
             //なんならここでTCP送信
-            SendPunchDoneTCP(m_hostIp, 55555);
+            //SendPunchDoneTCP(m_hostIp, 55555);
 
             return true;
         }
@@ -656,13 +649,7 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
         SetConsoleColor(2);
         std::cout << "[TCP] PUNCH_DONE送信 -> m_canSend = true\n";
         ResetConsoleColor();
-        {
-            std::lock_guard<std::mutex> lk(m_canSendMutex);
-            m_canSend = true; // ★ クライアント側: TCP送信完了でtrue
-        }
-        SetConsoleColor(3);
-        std::cout << "\n++++++++++++++チャット送信可+++++++++++++++\n";
-        ResetConsoleColor();
+        SetSendOk();
     }
     else
     {
@@ -805,6 +792,12 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
 
                         break;
                     }
+
+
+
+                 
+                    // 接続元にリレーでリレー受信の返信する
+                    RelaySendCounterToServer(info.external_ip, info.client_name);
                 }
 
                 std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -956,7 +949,7 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
                     auto json = nlohmann::json::parse(response);
                     for (auto& item : json)
                     {
-                        std::cout << "サーバーリレー受信[デバッグ用。これがでたら初回リレーがこっちに吸い込まれてる]" << std::endl;
+                        //std::cout << "サーバーリレー受信[デバッグ用。これがでたら初回リレーがこっちに吸い込まれてる]" << std::endl;
 
                         std::string from = item["user"];
                         std::string payloadType = item.value("payload_type", "");
@@ -981,6 +974,11 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
                         else if (payloadType == "leave")
                         {
                         }
+                        else if (payloadType == "relay_ack")
+                        {//初回リレーのお返しがきた
+                            SetSendOk();
+                        }
+                        
 
                         
 
@@ -993,6 +991,25 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
         }
         }).detach();
 }
+
+bool ChatNetwork::RelaySendCounterToServer(const std::string& clientExternalIp, const std::string& clientName)
+{//ホストのみ使用
+    if (!m_isHost)
+        return false;
+
+    // 送信内容
+    std::string message = clientName + ", 初回リレー受け取りました！";
+
+    // RelaySendDataToServerを使用（クライアント側外部IPに向けて）
+    RelaySendDataToServer(clientExternalIp, m_userName, "relay_ack", message);
+
+    std::cout << "[Host->Relay] Sent initial relay ack to " << clientName
+        << " (" << clientExternalIp << ")\n";
+
+    return true;
+}
+
+
 
 
 
@@ -1215,7 +1232,18 @@ void ChatNetwork::SendMessage(const std::string& message)
 
 
 
-
+void ChatNetwork::SetSendOk()
+{
+    ResetConsoleColor();
+    {
+        std::lock_guard<std::mutex> lk(m_canSendMutex);
+        m_canSend = true;
+    }
+    StopPunchLoop();
+    SetConsoleColor(3);
+    std::cout << "\n++++++++++++++チャット可能+++++++++++++++\n";
+    ResetConsoleColor();
+}
 
 
 

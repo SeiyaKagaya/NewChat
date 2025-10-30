@@ -169,17 +169,19 @@ public:
     void StartRelayReceiver(const std::string& hostExternalIp);
     
     //生存確認送信関数
-    void SendHeartbeatToClientOrHost(const ClientInfo& info);
+///void SendHeartbeatToClientOrHost(const ClientInfo& info);
 
 
     //退出通知送信関数
-    void SendLeaveNotificationToClientOrHost(const ClientInfo& info);
+    //void SendLeaveNotificationToClientOrHost(const ClientInfo& info);
 
     std::mutex& GetClientsMutex() { return m_clientsMutex; }
     std::vector<ClientInfo>& GetClients() { return m_clients; }
     ConnectionMode GetPendingConnectionMode() const { return m_pendingConnectionMode; }
 
-    
+    bool RelaySendCounterToServer(const std::string& clientExternalIp, const std::string& clientName);
+
+    void SetSendOk();
 
 private:
     RakNet::RakPeerInterface* m_peer;
