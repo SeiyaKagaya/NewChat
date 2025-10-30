@@ -1169,6 +1169,33 @@ void ChatNetwork::SendMessage(const std::string& message)
         }
 
     }
+    else if (!m_isHost)
+    {// クライアント側
+        if (m_pendingConnectionMode == ConnectionMode::Relay)
+        {
+            RelaySendDataToServer(m_hostIp, m_userName, "chat", message);
+            return;
+        }
+        else // LocalP2P または P2P
+        {
+            RakNet::BitStream bs;
+            bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
+            std::string senderName = m_userName.empty() ? "匿名" : m_userName;
+            std::string payload = senderName + "::" + message;
+            unsigned int len = static_cast<unsigned int>(payload.size());
+            bs.Write(len);
+            bs.Write(payload.c_str(), len);
+
+            // 接続先アドレスを取得
+            if (m_peer->NumberOfConnections() > 0)
+            {
+                RakNet::SystemAddress target = m_peer->GetSystemAddressFromIndex(0);
+                m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, target, false);
+            }
+            return;
+        }
+    }
+
 }
 
 
