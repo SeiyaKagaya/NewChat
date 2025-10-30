@@ -94,7 +94,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
         if (!m_tcpWaiterActive)
         {
             m_tcpWaiterActive = true;
-            m_tcpWaiterThread = std::thread([this]()
+            m_tcpWaiterThread = std::thread([this, MyConnectMode]()
                 {
                     const unsigned short listenPort = 55555; // TCP待ち受けポート
                     WSADATA wsa;
@@ -105,89 +105,97 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
                         return;
                     }
 
-                    // 一度だけリトライして安全に止める
-                    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-                    if (listener == INVALID_SOCKET)
+
+                    if (MyConnectMode != ConnectionMode::Relay)
                     {
-                        std::cerr << "[TCP Waiter] socket() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
-                        WSACleanup();
-                        m_tcpWaiterActive = false;
-                        return;
-                    }
-
-                    BOOL reuse = TRUE;
-                    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
-
-                    sockaddr_in addr{};
-                    addr.sin_family = AF_INET;
-                    addr.sin_addr.s_addr = INADDR_ANY;
-                    addr.sin_port = htons(listenPort);
-
-                    if (bind(listener, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
-                    {
-                        std::cerr << "[TCP Waiter] bind() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
-                        closesocket(listener);
-                        WSACleanup();
-                        m_tcpWaiterActive = false;
-                        return;
-                    }
-
-                    if (listen(listener, SOMAXCONN) == SOCKET_ERROR)
-                    {
-                        std::cerr << "[TCP Waiter] listen() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
-                        closesocket(listener);
-                        WSACleanup();
-                        m_tcpWaiterActive = false;
-                        return;
-                    }
-
-                    SetConsoleColor(2);
-                    std::cout << "[TCP] パンチ完遂待受中 (port=" << listenPort << ")...\n";
-                    ResetConsoleColor();
-
-                    fd_set readfds;
-                    timeval tv;
-                    tv.tv_sec = 2;
-                    tv.tv_usec = 0;
-
-                    while (m_tcpWaiterActive)
-                    {
-                        FD_ZERO(&readfds);
-                        FD_SET(listener, &readfds);
-                        int sel = select(static_cast<int>(listener + 1), &readfds, nullptr, nullptr, &tv);
-
-                        if (sel > 0)
+                        // 一度だけリトライして安全に止める
+                        SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+                        if (listener == INVALID_SOCKET)
                         {
-                            SOCKET client = accept(listener, nullptr, nullptr);
-                            if (client != INVALID_SOCKET)
+                            std::cerr << "[TCP Waiter] socket() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                            WSACleanup();
+                            m_tcpWaiterActive = false;
+                            return;
+                        }
+
+                        BOOL reuse = TRUE;
+                        setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
+
+                        sockaddr_in addr{};
+                        addr.sin_family = AF_INET;
+                        addr.sin_addr.s_addr = INADDR_ANY;
+                        addr.sin_port = htons(listenPort);
+
+                        if (bind(listener, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+                        {
+                            std::cerr << "[TCP Waiter] bind() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                            closesocket(listener);
+                            WSACleanup();
+                            m_tcpWaiterActive = false;
+                            return;
+                        }
+
+                        if (listen(listener, SOMAXCONN) == SOCKET_ERROR)
+                        {
+                            std::cerr << "[TCP Waiter] listen() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                            closesocket(listener);
+                            WSACleanup();
+                            m_tcpWaiterActive = false;
+                            return;
+                        }
+
+
+
+
+
+                        SetConsoleColor(2);
+                        std::cout << "[TCP] パンチ完遂待受中 (port=" << listenPort << ")...\n";
+                        ResetConsoleColor();
+
+                        fd_set readfds;
+                        timeval tv;
+                        tv.tv_sec = 2;
+                        tv.tv_usec = 0;
+
+                        while (m_tcpWaiterActive)
+                        {
+                            FD_ZERO(&readfds);
+                            FD_SET(listener, &readfds);
+                            int sel = select(static_cast<int>(listener + 1), &readfds, nullptr, nullptr, &tv);
+
+                            if (sel > 0)
                             {
-                                char buf[128] = {};
-                                int r = recv(client, buf, sizeof(buf) - 1, 0);
-                                if (r > 0)
+                                SOCKET client = accept(listener, nullptr, nullptr);
+                                if (client != INVALID_SOCKET)
                                 {
-                                    std::string s(buf, buf + r);
-                                    if (s.find("PUNCH_DONE") != std::string::npos)
+                                    char buf[128] = {};
+                                    int r = recv(client, buf, sizeof(buf) - 1, 0);
+                                    if (r > 0)
                                     {
-                                        SetConsoleColor(2);
-                                        std::cout << "[TCP] パンチ完遂通知受信 -> m_canSend = true\n";
-                                        ResetConsoleColor();
-                                        SetSendOk();
+                                        std::string s(buf, buf + r);
+                                        if (s.find("PUNCH_DONE") != std::string::npos)
+                                        {
+                                            SetConsoleColor(2);
+                                            std::cout << "[TCP] パンチ完遂通知受信 -> m_canSend = true\n";
+                                            ResetConsoleColor();
+                                            SetSendOk();
+                                        }
                                     }
+                                    closesocket(client);
                                 }
-                                closesocket(client);
                             }
+                            else if (sel < 0)
+                            {
+                                std::cerr << "[TCP Waiter] select error: " << WSAGetLastError() << std::endl;
+                                break;
+                            }
+                            std::this_thread::sleep_for(std::chrono::milliseconds(50));
                         }
-                        else if (sel < 0)
-                        {
-                            std::cerr << "[TCP Waiter] select error: " << WSAGetLastError() << std::endl;
-                            break;
-                        }
-                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                    }
 
-                    closesocket(listener);
-                    WSACleanup();
-                    m_tcpWaiterActive = false;
+                        closesocket(listener);
+                        WSACleanup();
+                        m_tcpWaiterActive = false;
+                    }
                 });
         }
     }
