@@ -1121,13 +1121,6 @@ void ChatNetwork::SendVoicePacket(const char* audioData, int dataSize)
 
 void ChatNetwork::SendMessage(const std::string& message)
 {
-    // クライアントがリレー接続の場合
-    if (!m_isHost && m_pendingConnectionMode == ConnectionMode::Relay)
-    {
-        RelaySendDataToServer(m_hostIp, m_userName, "chat", message);
-        return;
-    }
-
     // 送信用ビットストリームを作成
     RakNet::BitStream bs;
     bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
@@ -1178,14 +1171,6 @@ void ChatNetwork::SendMessage(const std::string& message)
         }
         else // LocalP2P または P2P
         {
-            RakNet::BitStream bs;
-            bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
-            std::string senderName = m_userName.empty() ? "匿名" : m_userName;
-            std::string payload = senderName + "::" + message;
-            unsigned int len = static_cast<unsigned int>(payload.size());
-            bs.Write(len);
-            bs.Write(payload.c_str(), len);
-
             // 接続先アドレスを取得
             if (m_peer->NumberOfConnections() > 0)
             {
