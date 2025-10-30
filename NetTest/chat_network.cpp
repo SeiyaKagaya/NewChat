@@ -82,7 +82,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
     if (result != RakNet::RAKNET_STARTED)
     {
         SetConsoleColor(4);
-        std::cout << "RakNet Startup失敗: " << result << std::endl;
+        std::cout << "[エラータグ1]RakNet Startup失敗: " << result << std::endl;
         ResetConsoleColor();
         return false;
     }
@@ -100,7 +100,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
                     WSADATA wsa;
                     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
                     {
-                        std::cerr << "[TCP Waiter] WSAStartup failed\n";
+                        std::cerr << "[エラータグ2][TCP Waiter] WSAStartup failed\n";
                         m_tcpWaiterActive = false;
                         return;
                     }
@@ -112,7 +112,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
                         SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
                         if (listener == INVALID_SOCKET)
                         {
-                            std::cerr << "[TCP Waiter] socket() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                            std::cerr << "[エラータグ3][TCP Waiter] socket() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
                             WSACleanup();
                             m_tcpWaiterActive = false;
                             return;
@@ -128,7 +128,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 
                         if (bind(listener, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
                         {
-                            std::cerr << "[TCP Waiter] bind() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                            std::cerr << "[エラータグ4][TCP Waiter] bind() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
                             closesocket(listener);
                             WSACleanup();
                             m_tcpWaiterActive = false;
@@ -137,7 +137,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 
                         if (listen(listener, SOMAXCONN) == SOCKET_ERROR)
                         {
-                            std::cerr << "[TCP Waiter] listen() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
+                            std::cerr << "[エラータグ5][TCP Waiter] listen() failed, WSAGetLastError: " << WSAGetLastError() << std::endl;
                             closesocket(listener);
                             WSACleanup();
                             m_tcpWaiterActive = false;
@@ -186,7 +186,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
                             }
                             else if (sel < 0)
                             {
-                                std::cerr << "[TCP Waiter] select error: " << WSAGetLastError() << std::endl;
+                                std::cerr << "[エラータグ6][TCP Waiter] select error: " << WSAGetLastError() << std::endl;
                                 break;
                             }
                             std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -607,7 +607,7 @@ void ChatNetwork::StartPunchLoop(const std::string& targetIp, unsigned short tar
                 int err = WSAGetLastError();
                 if (err != 0) {
                     SetConsoleColor(4);
-                    std::cout << "[DEBUG] sendto failed with WSAGetLastError(): " << err
+                    std::cout << "[エラータグ7][DEBUG] sendto failed with WSAGetLastError(): " << err
                         << " (packet size: " << packetSize << " bytes)" << std::endl;
                     ResetConsoleColor();
                 }
@@ -630,7 +630,7 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         SetConsoleColor(4);
-        std::cerr << "[TCP] WSAStartup failed\n";
+        std::cerr << "[エラータグ8][TCP] WSAStartup failed\n";
         ResetConsoleColor();
         return; 
     }
@@ -638,7 +638,7 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
     SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) {
         SetConsoleColor(4);
-        std::cerr << "[TCP] socket() failed\n";
+        std::cerr << "[エラータグ9][TCP] socket() failed\n";
         ResetConsoleColor();
         WSACleanup();
         return;
@@ -662,7 +662,7 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
     else
     {
         SetConsoleColor(4);
-        std::cerr << "[TCP] connect failed to " << targetIp << ":" << port << "\n";
+        std::cerr << "[エラータグ10][TCP] connect failed to " << targetIp << ":" << port << "\n";
         ResetConsoleColor();
     }
 
@@ -935,7 +935,7 @@ bool ChatNetwork::RelaySendDataToServer(
 
     std::string response;
     if (!RoomManager::HttpGet(url, response)) {
-        std::cerr << "[Relay送信失敗] type=" << payloadType << std::endl;
+        std::cerr << "[エラータグ12][Relay送信失敗] type=" << payloadType << std::endl;
         return false;
     }
     else
