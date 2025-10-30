@@ -404,12 +404,16 @@ void ChatLoop(ChatNetwork& chatNetwork)
                 SetConsoleColor(WHITE);
 
                 // 退出通知を送信
-                if (chatNetwork.IsHost()) {
-                    chatNetwork.BroadcastLeaveNotification(); // 新規関数
-                }
-                else {
-                    chatNetwork.SendLeaveNotification(); // 新規関数
-                }
+                //if (chatNetwork.IsHost()) {
+                //    chatNetwork.BroadcastLeaveNotification(); // 新規関数
+                //}
+                //else {
+                //    chatNetwork.SendLeaveNotification(); // 新規関数
+                //}
+
+ /*               ClientInfo info;
+                info.connectionMode = chatNetwork.IsHost() ? ConnectionMode::P2P : chatNetwork.GetPendingConnectionMode();
+                chatNetwork.SendLeaveNotificationToClientOrHost(info);*/
 
                 chatNetwork.Stop();
                 break;
@@ -420,18 +424,28 @@ void ChatLoop(ChatNetwork& chatNetwork)
 
         auto now = std::chrono::steady_clock::now();
 
-        if (!chatNetwork.IsHost())
+        if (inputMessage == "x" || inputMessage == "X")
         {
-            auto lastOpt = chatNetwork.GetLastHeartbeatOpt(chatNetwork.GetMyHostAddress());
-            if (lastOpt && std::chrono::duration_cast<std::chrono::seconds>(now - *lastOpt) > std::chrono::seconds(10))
-            {
-                chatNetwork.Stop();
-                break;
+            SetConsoleColor(RED);
+            std::cout << "チャットを終了します。\n";
+            SetConsoleColor(WHITE);
+
+            if (chatNetwork.IsHost()) {
+                // ホスト側は全クライアントに送信
+               /* std::lock_guard<std::mutex> lock(chatNetwork.GetClientsMutex());
+                for (auto& c : chatNetwork.GetClients()) {
+                    chatNetwork.SendLeaveNotificationToClientOrHost(c);
+                }*/
             }
-        }
-        else
-        {
-            chatNetwork.CheckClientTimeouts();
+            else {
+                // クライアント側はホストに送信
+               /* ClientInfo hostInfo;
+                hostInfo.connectionMode = chatNetwork.GetPendingConnectionMode();
+                chatNetwork.SendLeaveNotificationToClientOrHost(hostInfo);*/
+            }
+
+            chatNetwork.Stop();
+            break;
         }
 
 

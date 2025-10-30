@@ -49,7 +49,7 @@ ChatNetwork::~ChatNetwork()
     // ---------------------------
     // ③ ハートビート停止
     // ---------------------------
-    StopHeartbeat();
+    //StopHeartbeat();
 
     // ---------------------------
     // ④ TCP待ち受け終了
@@ -201,18 +201,25 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 
     // 監視スレッド・受信スレッド開始
     m_running = true;
-    StartHeartbeat();
+    //StartHeartbeat();
+
     if (m_isHost)
     {
-        StartClientMonitor();
+        //StartClientMonitor();
+    
         StartRelayPollThread(roomManager, youExternalIp, MyConnectMode);//ホスト1-リレー受信待機
     }
     else
     {
-        StartHostMonitor();
+        //StartHostMonitor();
     }
 
     m_receiveThread = std::thread(&ChatNetwork::ReceiveLoop, this);
+
+
+    //無条件に開通---ここでリレー通信を受け取る
+    StartRelayReceiver(youExternalIp);
+
     return true;
 }
 
@@ -339,10 +346,7 @@ void ChatNetwork::ReceiveLoop()
                     }
 
                     // ハートビートも初期化
-                    {
-                        std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
-                        m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();
-                    }
+                   
                 }
                 break;
             }
@@ -386,50 +390,45 @@ void ChatNetwork::ReceiveLoop()
             }
             case ID_LEAVE_NOTIFICATION:
             {
-                if (!m_isHost) {
-                    SetConsoleColor(4);
-                    std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
-                    ResetConsoleColor();
-                    m_forceExit = true;
-                    Stop();  // クライアントは最初に戻る
-                    m_running = false;
-                }
-                else {
-                    std::lock_guard<std::mutex> lock(m_clientsMutex);
-                    auto it = std::find_if(m_clients.begin(), m_clients.end(),
-                        [&](const ClientInfo& c) { return c.address == packet->systemAddress; });
-                    if (it != m_clients.end()) {
-                        SetConsoleColor(4);
-                        std::cout << "[Info] クライアント " << it->userName << " が退出しました。\n";
-                        ResetConsoleColor();
+                //if (!m_isHost) {
+                //    SetConsoleColor(4);
+                //    std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
+                //    ResetConsoleColor();
+                //    m_forceExit = true;
+                //    Stop();  // クライアントは最初に戻る
+                //    m_running = false;
+                //}
+                //else {
+                //    std::lock_guard<std::mutex> lock(m_clientsMutex);
+                //    auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                //        [&](const ClientInfo& c) { return c.address == packet->systemAddress; });
+                //    if (it != m_clients.end()) {
+                //        SetConsoleColor(4);
+                //        std::cout << "[Info] クライアント " << it->userName << " が退出しました。\n";
+                //        ResetConsoleColor();
 
-                        // 心拍管理からも削除
-                        {
-                            std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
-                            m_lastHeartbeat.erase(it->address);
-                        }
+                //        // 心拍管理からも削除
+                //        {
+                //            std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
+                //            m_lastHeartbeat.erase(it->address);
+                //        }
 
-                        // m_canSend リセット
-                        {
-                            std::lock_guard<std::mutex> lk(m_canSendMutex);
-                            m_canSend = false;
-                        }
+                //        // m_canSend リセット
+                //        {
+                //            std::lock_guard<std::mutex> lk(m_canSendMutex);
+                //            m_canSend = false;
+                //        }
 
-                        // 退出クライアント情報を即削除
-                        m_clients.erase(it);
-                    }
-                }
+                //        // 退出クライアント情報を即削除
+                //        m_clients.erase(it);
+                //    }
+                //}
                 break;
             }
             case ID_HEARTBEAT:
             {
-                if (m_isHost) {
-                    std::lock_guard<std::mutex> lock(m_heartbeatMutex);
-                    m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();
-                }
-                else {
-                    m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
-                }
+              /*  std::lock_guard<std::mutex> lock(m_heartbeatMutex);
+                m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();*/
                 break;
             }
             case ID_GAME_MESSAGE:
@@ -676,28 +675,23 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
 }
 
 void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp, ConnectionMode MyConnectMode)
-{//初回リレー受信待機(つまりHost)
-
-
-    ///memo　今後サーバーリレーでの各種データの送受信を想定しているが、
-    //現在このリレー受信部は各接続方式でも共通な"クライアント→ホストの初回リレー受信(クライアントの情報もりもり)のみを想定している"ためホストしかこれを起動しない。
-    //つまり今後ホスト/クライアントの双方が起動し、ホストは"クライアントからの初回リレー+通常サーバーリレーデータ"を受信、クライアントは"通常サーバーリレーデータ"のみ受信
-    //と形を変えなきゃいけない
-
+{
     SetConsoleColor(3);
-    std::cout << "\nサーバーからjoin受付開始\n";
+    std::cout << "\n[Host] サーバーからjoin受付開始\n";
     ResetConsoleColor();
 
-    running = true; // スレッドループ制御用フラグ
+    running = true;
 
     std::thread([this, &roomManager, hostExternalIp, MyConnectMode]()
         {
-            while (running) {
+            while (running)
+            {
                 auto infoOpt = roomManager.GetPendingClientInfo(hostExternalIp);
-
-                if (infoOpt.has_value()) {
+                if (infoOpt.has_value())
+                {
                     auto info = infoOpt.value();
-                    std::cout << "[Relay] Client info received via server relay:\n";
+
+                    std::cout << "\n[Relay] Client info received via server relay:\n";
                     std::cout << "  external_ip: " << info.external_ip << "\n";
                     std::cout << "  external_port: " << info.external_port << "\n";
                     std::cout << "  local_ip: " << info.local_ip << "\n";
@@ -705,72 +699,88 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                     std::cout << "  client_name: " << info.client_name << "\n";
                     std::cout << "  client_connection_mode: " << static_cast<int>(info.connection_mode) << "\n";
 
-                    //--------------------------------------------------
-                    // 🔍 同一LAN判定
-                    //--------------------------------------------------
                     bool sameLan = IsSameLAN(GetLocalIPAddress(), info.local_ip);
-
-                    // クライアント側接続モード
                     ConnectionMode clientMode = info.connection_mode;
 
-                    // 実際に使う接続方式を決定
                     ConnectionMode selectedMode;
-
-                    if (sameLan) 
-                    {//同じWi-Fi
-                        selectedMode = ConnectionMode::LocalP2P; // 同一LANならローカルP2P
-                    }
+                    if (sameLan)
+                        selectedMode = ConnectionMode::LocalP2P;
+                    else if (MyConnectMode == ConnectionMode::Relay)
+                        selectedMode = ConnectionMode::Relay;
                     else
-                    {//違うWi-Fi
-                        if (MyConnectMode == ConnectionMode::Relay) 
+                        selectedMode = clientMode;
+
+                    // クライアント情報の保存・更新
+                    {
+                        std::lock_guard<std::mutex> lock(m_clientsMutex);
+
+                        auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                            [&](const ClientInfo& c) {
+                                if (sameLan)
+                                    return c.localIp == info.local_ip && c.localPort == info.local_port;
+                                else
+                                    return c.externalIp == info.external_ip && c.externalPort == info.external_port;
+                            });
+
+                        if (it != m_clients.end())
                         {
-                            selectedMode = ConnectionMode::Relay; // ホストがリレーならリレーで
+                            it->connectionMode = selectedMode;
+                            it->localIp = info.local_ip;
+                            it->localPort = info.local_port;
+                            it->isSameLAN = sameLan;
+                            it->userName = info.client_name;
                         }
-                        else {
-                            selectedMode = clientMode; // ホストがP2Pならクライアントに合わせる
+                        else
+                        {
+                            ClientInfo c;
+                            RakNet::SystemAddress addr;
+                            addr.FromStringExplicitPort(info.external_ip.c_str(), static_cast<unsigned short>(info.external_port));
+                            c.address = addr;
+                            c.externalIp = info.external_ip;
+                            c.externalPort = info.external_port;
+                            c.connectionMode = selectedMode;
+                            c.localIp = info.local_ip;
+                            c.localPort = info.local_port;
+                            c.isSameLAN = sameLan;
+                            c.userName = info.client_name;
+                            c.connectedTime = std::chrono::steady_clock::now();
+                            m_clients.push_back(c);
+
                         }
                     }
 
+                    // デバッグ出力
+                    std::string modeStr;
+                    switch (selectedMode) {
+                    case ConnectionMode::LocalP2P: modeStr = "LocalP2P"; break;
+                    case ConnectionMode::P2P: modeStr = "P2P"; break;
+                    case ConnectionMode::Relay: modeStr = "Relay"; break;
+                    }
+                    std::cout << "[Relay] Selected connection mode for client "
+                        << info.client_name << ": " << modeStr << "\n";
 
-                    //大事!!まだやってない!!!!!
-                    //クライアントごとにやり取りする方式を保存しないとヤバい!
-                    
-
-
-
-                    std::cout << "クライアントから初回リレー受信\n";
-
-                    // 選択方式に応じて処理
+                    // 接続モード別処理
                     switch (selectedMode)
                     {
                     case ConnectionMode::LocalP2P:
                         SetConsoleColor(1);
-                        std::cout << "[Host] LocalP2P: " << info.local_ip << ":" << info.local_port << " でパンチ無しで接続開始\n";
+                        std::cout << "[Host] LocalP2P: " << info.local_ip << ":" << info.local_port << " で直接接続待機\n";
                         ResetConsoleColor();
-
-                        //パンチ無しでクライアント側のTCP通信確率宣言[パンチ受信で送り返すやつ]をまつ[ホスト側]
-                        //つまりTCPをもらったら通信開始
-                                                
+                        // TCP受信待機（後続処理で）
                         break;
 
                     case ConnectionMode::P2P:
                         SetConsoleColor(1);
-                        std::cout << "[Host] P2P: " << info.external_ip << ":" << info.external_port << " でパンチ開始\n";
+                        std::cout << "[Host] P2P: " << info.external_ip << ":" << info.external_port << " でUDPパンチ開始\n";
                         ResetConsoleColor();
-
-                        //通常通りUDPパンチ開始
-                        StartPunchLoop(info.external_ip, info.external_port, true);//ホスト→クライアント
-
+                        StartPunchLoop(info.external_ip, info.external_port, true);
                         break;
 
                     case ConnectionMode::Relay:
                         SetConsoleColor(1);
-                        std::cout << "[Host] Relay: クライアントとリレーで通信開始\n";
+                        std::cout << "[Host] Relay: クライアントとリレー通信開始\n";
                         ResetConsoleColor();
-
-                        //UDPパンチ無しでリレーにてクライアント側のTCP通信確率宣言[パンチ受信で送り返すやつ]をまつ[ホスト側]
-                        //つまりTCPをもらったら通信開始
-
+                        // TCP受信待機（後続処理で）
                         break;
                     }
                 }
@@ -779,6 +789,7 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
             }
         }).detach();
 }
+
 
 
 void ChatNetwork::Stop()
@@ -814,66 +825,6 @@ void ChatNetwork::SetUserName(const std::string& name)
     m_userName = name;
 }
 
-void ChatNetwork::SendLeaveNotification()
-{
-    if (m_peer->NumberOfConnections() == 0) return;
-
-    RakNet::BitStream bs;
-    bs.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
-    m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, m_peer->GetSystemAddressFromIndex(0), false);
-}
-
-void ChatNetwork::BroadcastLeaveNotification()
-{
-    std::lock_guard<std::mutex> lock(m_clientsMutex);
-    for (auto& c : m_clients)
-    {
-        RakNet::BitStream bs;
-        bs.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
-        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, c.address, false);
-    }
-}
-
-void ChatNetwork::StartHeartbeat()
-{
-    bool expected = false;
-    if (!m_heartbeatActive.compare_exchange_strong(expected, true)) return;
-
-    m_heartbeatThread = std::thread([this]()
-        {
-            while (m_heartbeatActive)
-            {
-                if (m_isHost)
-                {
-                    std::lock_guard<std::mutex> lock(m_clientsMutex);
-                    for (auto& c : m_clients)
-                    {
-                        RakNet::BitStream bs;
-                        bs.Write((RakNet::MessageID)ID_HEARTBEAT);
-                        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, c.address, false);
-                    }
-                }
-                else
-                {
-                    if (m_peer->NumberOfConnections() > 0)
-                    {
-                        RakNet::BitStream bs;
-                        bs.Write((RakNet::MessageID)ID_HEARTBEAT);
-                        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, m_peer->GetSystemAddressFromIndex(0), false);
-                    }
-                }
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-        });
-}
-
-void ChatNetwork::StopHeartbeat()
-{
-    bool expected = true;
-    if (!m_heartbeatActive.compare_exchange_strong(expected, false)) return;
-    if (m_heartbeatThread.joinable()) m_heartbeatThread.join();
-}
-
 RakNet::SystemAddress ChatNetwork::GetMyHostAddress() const
 {
     if (!m_isHost && m_peer->NumberOfConnections() > 0)
@@ -883,121 +834,7 @@ RakNet::SystemAddress ChatNetwork::GetMyHostAddress() const
     return RakNet::UNASSIGNED_SYSTEM_ADDRESS;
 }
 
-std::chrono::steady_clock::time_point ChatNetwork::GetLastHeartbeat(RakNet::SystemAddress addr)
-{
-    std::lock_guard<std::mutex> lock(m_heartbeatMutex);
-    auto it = m_lastHeartbeat.find(addr);
-    if (it != m_lastHeartbeat.end())
-        return it->second;
-    return std::chrono::steady_clock::now() - std::chrono::seconds(100); // 過去時間を返す（タイムアウト扱い）
-}
 
-void ChatNetwork::CheckClientTimeouts()
-{
-    auto now = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> lock(m_clientsMutex);
-
-    for (auto it = m_clients.begin(); it != m_clients.end();)
-    {
-        auto last = GetLastHeartbeat(it->address);
-
-        // ★★★ 新規追加: 接続直後はスキップ
-        auto connectedAgo = std::chrono::duration_cast<std::chrono::seconds>(now - it->connectedTime);
-        if (connectedAgo < std::chrono::seconds(5)) {
-            ++it;
-            continue;
-        }
-
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last) > m_heartbeatTimeout)
-        {
-            SetConsoleColor(4);
-            std::cout << "[Info] クライアント " << it->userName << " が応答なし。退出扱いにします。\n";
-            ResetConsoleColor();
-
-            // 他クライアントに退出通知送信
-            RakNet::BitStream bs;
-            bs.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
-            for (auto& c : m_clients)
-            {
-                if (c.address != it->address) {
-                    m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, c.address, false);
-                }
-            }
-
-            // heartbeat も削除
-            {
-                std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
-                m_lastHeartbeat.erase(it->address);
-            }
-
-            // ★ ここに追加
-            {
-                std::lock_guard<std::mutex> lk(m_canSendMutex);
-                m_canSend = false;
-            }
-
-            it = m_clients.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
-}
-
-std::optional<std::chrono::steady_clock::time_point> ChatNetwork::GetLastHeartbeatOpt(RakNet::SystemAddress addr)
-{
-    std::lock_guard<std::mutex> lock(m_heartbeatMutex);
-    auto it = m_lastHeartbeat.find(addr);
-    if (it != m_lastHeartbeat.end())
-        return it->second;
-    return std::nullopt;
-}
-
-// ============================================================
-// 新規追加：ホスト／クライアントの生存監視スレッド
-// ============================================================
-void ChatNetwork::StartClientMonitor()
-{
-    if (m_clientMonitorActive || !m_isHost) return;
-    m_clientMonitorActive = true;
-
-    m_clientMonitorThread = std::thread([this]()
-        {
-            while (m_running)
-            {
-                CheckClientTimeouts();
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-            m_clientMonitorActive = false;
-        });
-}
-
-void ChatNetwork::StartHostMonitor()
-{
-    if (m_hostMonitorActive || m_isHost) return;
-    m_hostMonitorActive = true;
-
-    m_hostMonitorThread = std::thread([this]()
-        {
-            while (m_running)
-            {
-                auto now = std::chrono::steady_clock::now();
-                auto lastOpt = GetLastHeartbeatOpt(GetMyHostAddress());
-                if (lastOpt && std::chrono::duration_cast<std::chrono::seconds>(now - *lastOpt) > std::chrono::seconds(3))
-                {
-                    SetConsoleColor(4);
-                    std::cout << "[Client] ホスト応答なし。Enterで最初に戻ります...\n";
-                    ResetConsoleColor();
-                    m_forceExit = true;     // ★追加7
-                    Stop();
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-            m_hostMonitorActive = false;
-        });
-}
 
 
 //--------------------------------------------------------------------------------------
@@ -1005,7 +842,7 @@ void ChatNetwork::StartHostMonitor()
 //--------------------------------------------------------------------------------------
 
 void ChatNetwork::RelayPacket(RelayType type, const RakNet::SystemAddress& sender, const RakNet::BitStream& data)
-{
+{//ホストリレー補助関数(サーバーリレーではない)
     if (!m_isHost) return;
 
     PacketPriority priority = HIGH_PRIORITY;
@@ -1051,25 +888,90 @@ void ChatNetwork::RelayPacket(RelayType type, const RakNet::SystemAddress& sende
         m_peer->Send(&data, priority, reliability, channel, addr, false);
     }
 }
-//
-//bool ChatNetwork::RelaySendData(const std::string& hostIp,
-//    const std::string& fromName,
-//    const std::string& payloadType,
-//    const std::string& payload)
-//{
-//    std::string url = "http://210.131.217.223:12345/room_manager.php?action=relay_send"
-//        + std::string("&host_ip=") + hostIp
-//        + "&from=" + RoomManager::UrlEncode(RoomManager::CP932ToUTF8(fromName))
-//        + "&payload_type=" + RoomManager::UrlEncode(payloadType)
-//        + "&payload=" + RoomManager::UrlEncode(payload);
-//
-//    std::string response;
-//    if (!RoomManager::HttpGet(url, response)) {
-//        std::cerr << "[Relay送信失敗] payload_type=" << payloadType << std::endl;
-//        return false;
-//    }
-//    return true;
-//}
+
+// ===============================
+// サーバーRelay送信関連
+// ===============================
+bool ChatNetwork::RelaySendDataToServer(
+    const std::string& hostIp,
+    const std::string& fromName,
+    const std::string& payloadType,
+    const std::string& payload)
+{
+    std::string url = "http://210.131.217.223:12345/server_relay.php?action=relay_send"
+        + std::string("&host_ip=") + hostIp
+        + "&from=" + RoomManager::UrlEncode(RoomManager::CP932ToUTF8(fromName))
+        + "&payload_type=" + RoomManager::UrlEncode(payloadType)
+        + "&payload=" + RoomManager::UrlEncode(payload);
+
+    std::string response;
+    if (!RoomManager::HttpGet(url, response)) {
+        std::cerr << "[Relay送信失敗] type=" << payloadType << std::endl;
+        return false;
+    }
+    else
+    {
+        std::cout << "[サーバーリレー送信] " << std::endl;
+    }
+    return true;
+}
+// ===============================
+// サーバーRelay受信関連
+// ===============================
+void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
+{
+    if (m_relayReceiverActive) return;
+    m_relayReceiverActive = true;
+
+    std::thread([this, hostExternalIp]() {
+        while (m_relayReceiverActive)
+        {
+            std::string url = "http://210.131.217.223:12345/server_relay.php?action=relay_recv&host_ip=" + hostExternalIp;
+            std::string response;
+            if (RoomManager::HttpGet(url, response))
+            {
+                try {
+                    auto json = nlohmann::json::parse(response);
+                    for (auto& item : json)
+                    {
+                        std::cout << "サーバーリレー受信[デバッグ用。これがでたら初回リレーがこっちに吸い込まれてる]" << std::endl;
+
+                        std::string from = item["user"];
+                        std::string payloadType = item.value("payload_type", "");
+                        std::string payload = item.value("payload", "");
+
+                        if (payloadType == "chat") {
+                            SetConsoleColor(15);
+                            std::cout << "[Relay] " << from << " : " << payload << std::endl;
+                            ResetConsoleColor();
+                        }
+                        else if (payloadType == "voice") {
+                            std::string decoded = FromBase64(payload);
+                            // decoded にPCMデータが入っているので、
+                            // ここでPlayPCM(decoded.data(), decoded.size());
+                        }
+                        else if (payloadType == "regular") {
+                            // TODO: game regular update反映
+                        }
+                        else if (payloadType == "heartbeat") {
+                           
+                        }
+                        else if (payloadType == "leave")
+                        {
+                        }
+
+                        
+
+                    }
+                }
+                catch (...) {}
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        }).detach();
+}
+
 
 
 
@@ -1080,18 +982,23 @@ void ChatNetwork::SendGameInput(const AnyTime& inputData)
 {
     if (!m_peer) return;
 
+    // クライアント送信は自分のモードに従う
+    if (m_pendingConnectionMode == ConnectionMode::Relay) {
+        std::ostringstream ss;
+        ss << inputData.playerId << "," << inputData.inputFlags << "," << inputData.timeStamp;
+        RelaySendDataToServer(m_hostIp, m_userName, "input", ss.str());
+        return;
+    }
+
+    // P2P
     RakNet::BitStream bs;
     bs.Write((RakNet::MessageID)ID_GAME_INPUT);
     bs.Write(inputData.playerId);
     bs.Write(inputData.inputFlags);
     bs.Write(inputData.timeStamp);
-
-    // 軽量で確実性不要：UNRELIABLE
-    m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true);//単方向送信
-
-
-    
+    m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true);
 }
+
 
 // ------------------------------------
 // 定期更新送信（ホスト ）
@@ -1100,35 +1007,43 @@ void ChatNetwork::SendRegularUpdate(const Regular& update)
 {
     if (!m_peer) return;
 
-    RakNet::BitStream bs;
-    bs.Write((RakNet::MessageID)ID_GAME_REGULAR_UPDATE);
-    bs.Write(update.objectID);
-    bs.Write(update.position.x);
-    bs.Write(update.position.y);
-    bs.Write(update.position.z);
-    bs.Write(update.rotation.x);
-    bs.Write(update.rotation.y);
-    bs.Write(update.rotation.z);
-    bs.Write(update.rotation.w);
-    bs.Write(update.linerVelocity.x);
-    bs.Write(update.linerVelocity.y);
-    bs.Write(update.linerVelocity.z);
-    bs.Write(update.angularVelocity.x);
-    bs.Write(update.angularVelocity.y);
-    bs.Write(update.angularVelocity.z);
+    if (!m_isHost) return;
 
-    if (m_isHost)
+    std::lock_guard<std::mutex> lock(m_clientsMutex);
+
+    for (auto& c : m_clients)
     {
-        // ホストなら中継
-        RelayPacket(RelayType::RegularUpdate, RakNet::UNASSIGNED_SYSTEM_ADDRESS, bs);
-    }
-    else if (m_peer->NumberOfConnections() > 0)
-    {
-        //おかしい。なぜならホストからしか発信しないから
-        // クライアント → ホスト
-       // m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 1, m_peer->GetSystemAddressFromIndex(0), false);
+        if (c.connectionMode == ConnectionMode::Relay)
+        {
+            std::ostringstream ss;
+            ss << update.objectID << "," << update.position.x << "," << update.position.y;
+            RelaySendDataToServer(c.externalIp, m_userName, "regular", ss.str());
+        }
+        else
+        {
+            RakNet::BitStream bs;
+            bs.Write((RakNet::MessageID)ID_GAME_REGULAR_UPDATE);
+            bs.Write(update.objectID);
+            bs.Write(update.position.x);
+            bs.Write(update.position.y);
+            bs.Write(update.position.z);
+            bs.Write(update.rotation.x);
+            bs.Write(update.rotation.y);
+            bs.Write(update.rotation.z);
+            bs.Write(update.rotation.w);
+            bs.Write(update.linerVelocity.x);
+            bs.Write(update.linerVelocity.y);
+            bs.Write(update.linerVelocity.z);
+            bs.Write(update.angularVelocity.x);
+            bs.Write(update.angularVelocity.y);
+            bs.Write(update.angularVelocity.z);
+
+            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 1, c.address, false);
+        }
     }
 }
+
+
 
 
 
@@ -1139,43 +1054,93 @@ void ChatNetwork::SendVoicePacket(const char* audioData, int dataSize)
 {
     if (!m_peer || dataSize <= 0) return;
 
+    // クライアント送信は自分のモードで
+    if (!m_isHost && m_pendingConnectionMode == ConnectionMode::Relay)
+    {
+        std::string encoded = ToBase64(std::string(audioData, dataSize));
+        RelaySendDataToServer(m_hostIp, m_userName, "voice", encoded);
+        return;
+    }
+
     RakNet::BitStream bs;
     bs.Write((RakNet::MessageID)ID_VOICE_PACKET);
     bs.Write(audioData, dataSize);
 
     if (m_isHost)
     {
-        RelayPacket(RelayType::Voice, RakNet::UNASSIGNED_SYSTEM_ADDRESS, bs);
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        for (auto& c : m_clients)
+        {
+            switch (c.connectionMode)
+            {
+            case ConnectionMode::Relay:
+            {
+                std::string encoded = ToBase64(std::string(audioData, dataSize));
+                RelaySendDataToServer(c.externalIp, m_userName, "voice", encoded);
+                break;
+            }
+            case ConnectionMode::P2P:
+            case ConnectionMode::LocalP2P:
+                m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, c.address, false);
+                break;
+            }
+        }
     }
-    else if (m_peer->NumberOfConnections() > 0)
+    else
     {
-        m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, m_peer->GetSystemAddressFromIndex(0), false);
+        // クライアント P2P 送信
+        if (m_peer->NumberOfConnections() > 0)
+            m_peer->Send(&bs, HIGH_PRIORITY, UNRELIABLE_SEQUENCED, 3, m_peer->GetSystemAddressFromIndex(0), false);
     }
 }
+
+
 
 
 
 void ChatNetwork::SendMessage(const std::string& message)
 {
+    // クライアントは自分のモードで
+    if (!m_isHost && m_pendingConnectionMode == ConnectionMode::Relay)
+    {
+        RelaySendDataToServer(m_hostIp, m_userName, "chat", message);
+        return;
+    }
+
     RakNet::BitStream bs;
     bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
-
     std::string senderName = m_userName.empty() ? "匿名" : m_userName;
     std::string payload = senderName + "::" + message;
-    unsigned int len = (unsigned int)payload.size();
+    unsigned int len = static_cast<unsigned int>(payload.size());
     bs.Write(len);
     bs.Write(payload.c_str(), len);
 
     if (m_isHost)
     {
-        RelayPacket(RelayType::Chat, RakNet::UNASSIGNED_SYSTEM_ADDRESS, bs);
-    }
-    else if (m_peer->NumberOfConnections() > 0)
-    {
-        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, m_peer->GetSystemAddressFromIndex(0), false);
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        for (auto& c : m_clients)
+        {
+            switch (c.connectionMode)
+            {
+            case ConnectionMode::Relay:
+                RelaySendDataToServer(c.externalIp, m_userName, "chat", message);
+                break;
 
+            case ConnectionMode::P2P:
+            case ConnectionMode::LocalP2P:
+                m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, c.address, false);
+                break;
+            }
+        }
+    }
+    else
+    {
+        // クライアント P2P 送信
+        if (m_peer->NumberOfConnections() > 0)
+            m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, m_peer->GetSystemAddressFromIndex(0), false);
     }
 }
+
 
 
 

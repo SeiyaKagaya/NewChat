@@ -51,12 +51,20 @@ struct ClientInfo {
     std::string protocol;       // "OK4" / "OK6"
     std::string externalIp;
     unsigned short externalPort = 0;
-    std::string localIp;        // 新規: LAN内アドレス
-    unsigned short localPort = 0; // 新規: LAN内ポート
-    bool isSameLAN = false;     // 新規: 同一LAN判定
-    std::string userName;       // ←追加 (バイナリ/CP932 でも扱える)
-    std::chrono::steady_clock::time_point connectedTime; //接続時間
+    std::string localIp;        // LAN内アドレス
+    unsigned short localPort = 0;
+    bool isSameLAN = false;     // LAN内判定
+    std::string userName;
+    std::chrono::steady_clock::time_point connectedTime;
+
+    ConnectionMode connectionMode = ConnectionMode::Relay; // ★追加
 };
+
+
+
+
+
+
 
 // 種別ごとの識別子
 enum class RelayType : uint8_t {
@@ -110,23 +118,23 @@ public:
     std::string ToBase64(const std::string& input);
     std::string FromBase64(const std::string& input);
 
-    void SendLeaveNotification();        // クライアント用
-    void BroadcastLeaveNotification();   // ホスト用
+    //void SendLeaveNotification();        // クライアント用
+    //void BroadcastLeaveNotification();   // ホスト用
     bool IsHost() const { return m_isHost; }
 
-    void StartHeartbeat();
-    void StopHeartbeat();
+    //void StartHeartbeat();
+    //void StopHeartbeat();
 
     RakNet::SystemAddress GetMyHostAddress() const;
-    std::chrono::steady_clock::time_point GetLastHeartbeat(RakNet::SystemAddress addr);
-    void CheckClientTimeouts();
+    //std::chrono::steady_clock::time_point GetLastHeartbeat(RakNet::SystemAddress addr);
+    //void CheckClientTimeouts();
 
-    std::optional<std::chrono::steady_clock::time_point> GetLastHeartbeatOpt(RakNet::SystemAddress addr);
+    //std::optional<std::chrono::steady_clock::time_point> GetLastHeartbeatOpt(RakNet::SystemAddress addr);
 
     void StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp, ConnectionMode MyConnectMode);
 
-    void StartClientMonitor();  // ホストがクライアント生存確認
-    void StartHostMonitor();    // クライアントがホスト生存確認
+    //void StartClientMonitor();  // ホストがクライアント生存確認
+    //void StartHostMonitor();    // クライアントがホスト生存確認
 
     bool GetForceExit() { return m_forceExit; }
 
@@ -143,7 +151,34 @@ public:
     //スター型P2Pのリレー(サーバーリレーでない。上記３つや上記の受信時など、補助ツールに近い)
     void RelayPacket(RelayType type, const RakNet::SystemAddress& sender, const RakNet::BitStream& data);
    
+    //void CheckClientTimeouts();
+    //void CheckHostTimeout();
 
+
+    // ===============================
+// Relay通信関連
+// ===============================
+    bool RelaySendDataToServer(
+        const std::string& hostIp,
+        const std::string& fromName,
+        const std::string& payloadType,
+        const std::string& payload);
+   
+
+    void StartRelayReceiver(const std::string& hostExternalIp);
+    
+    //生存確認送信関数
+    void SendHeartbeatToClientOrHost(const ClientInfo& info);
+
+
+    //退出通知送信関数
+    void SendLeaveNotificationToClientOrHost(const ClientInfo& info);
+
+    std::mutex& GetClientsMutex() { return m_clientsMutex; }
+    std::vector<ClientInfo>& GetClients() { return m_clients; }
+    ConnectionMode GetPendingConnectionMode() const { return m_pendingConnectionMode; }
+
+    
 
 private:
     RakNet::RakPeerInterface* m_peer;
@@ -208,7 +243,16 @@ private:
 
     bool running = false;  // スレッド動作用フラグ
 
-    ConnectionMode m_pendingConnectionMode = ConnectionMode::Relay; // ←追加
+    ConnectionMode m_pendingConnectionMode = ConnectionMode::P2P; // ←追加
+
+        // ==============================
+        // Relay関連ステート
+        // ==============================
+        std::atomic<bool> m_relayReceiverActive = false;   // Relay受信スレッド稼働フラグ
+       // ConnectionMode m_myConnectionMode = ConnectionMode::P2P; // 自分の接続モード(初期はP2P)
+
+        // ユーザー名をキーに、最後の受信時刻を管理
+        std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_lastHeartbeatRelay;
 };
 
 
