@@ -204,6 +204,9 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
     m_running = true;
     //StartHeartbeat();
 
+        //無条件に開通---ここでリレー通信を受け取る
+    StartRelayReceiver(youExternalIp);
+
     if (m_isHost)
     {
         //StartClientMonitor();
@@ -218,8 +221,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
     m_receiveThread = std::thread(&ChatNetwork::ReceiveLoop, this);
 
 
-    //無条件に開通---ここでリレー通信を受け取る
-    StartRelayReceiver(youExternalIp);
+
 
     return true;
 }
@@ -1008,18 +1010,51 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
 
 bool ChatNetwork::RelaySendCounterToServer(const std::string& clientExternalIp, const std::string& clientName)
 {//ホストのみ使用
-    if (!m_isHost)
-        return false;
+    //if (!m_isHost)
+    //    return false;
 
-    // 送信内容
-    std::string message = clientName + ", 初回リレー受け取りました！";
+    //// 送信内容
+    //std::string message = clientName + ", 初回リレー受け取りました！";
 
-    // RelaySendDataToServerを使用（クライアント側外部IPに向けて）
-    RelaySendDataToServer(clientExternalIp, m_userName, "relay_ack", message);
+    //// RelaySendDataToServerを使用（クライアント側外部IPに向けて）
+    //RelaySendDataToServer(clientExternalIp, m_userName, "relay_ack", message);
 
-    std::cout << "[Host->Relay] Sent initial relay ack to " << clientName
-        << " (" << clientExternalIp << ")\n";
+    //std::cout << "[Host->Relay] Sent initial relay ack to " << clientName
+    //    << " (" << clientExternalIp << ")\n";
 
+    //return true;
+
+
+    std::string message = "ServerRelayAck";
+    
+
+    // 送信用ビットストリームを作成
+    RakNet::BitStream bs;
+    bs.Write((RakNet::MessageID)ID_GAME_MESSAGE);
+    std::string senderName = m_userName.empty() ? "匿名" : m_userName;
+    std::string payload = senderName + "::" + message;
+    unsigned int len = static_cast<unsigned int>(payload.size());
+    bs.Write(len);
+    bs.Write(payload.c_str(), len);
+
+    if (m_isHost)
+    {
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+
+        //std::cout << "[Host] m_clients size=" << m_clients.size() << std::endl;
+        //for (size_t i = 0; i < m_clients.size(); ++i)
+        //{
+        //    std::cout << "  [" << i << "] " << m_clients[i].address.ToString() << std::endl;
+        //}
+
+
+        //RelaySendDataToServer(c.externalIp, m_userName, "chat", message);
+        RelaySendDataToServer(m_hostIp, m_userName, "chat", message);
+
+          
+            
+        
+    }
     return true;
 }
 
@@ -1192,11 +1227,11 @@ void ChatNetwork::SendMessage(const std::string& message)
     {
         std::lock_guard<std::mutex> lock(m_clientsMutex);
 
-        std::cout << "[Host] m_clients size=" << m_clients.size() << std::endl;
+ /*       std::cout << "[Host] m_clients size=" << m_clients.size() << std::endl;
         for (size_t i = 0; i < m_clients.size(); ++i)
         {
             std::cout << "  [" << i << "] " << m_clients[i].address.ToString() << std::endl;
-        }
+        }*/
 
         for (auto& c : m_clients)
         {
