@@ -48,6 +48,7 @@ enum GAME_MESSAGES
 
 struct ClientInfo {
     RakNet::SystemAddress address;
+    RakNet::RakNetGUID guid;   // ←これを追加！
     std::string protocol;       // "OK4" / "OK6"
     std::string externalIp;
     unsigned short externalPort = 0;
