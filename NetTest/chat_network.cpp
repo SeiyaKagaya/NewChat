@@ -767,6 +767,10 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                     std::cout << "[Relay] Selected connection mode for client "
                         << info.client_name << ": " << modeStr << "\n";
 
+
+                    // 接続元にリレーでリレー受信の返信する
+                    RelaySendCounterToServer(info.external_ip, info.client_name);
+
                     // 接続モード別処理
                     switch (selectedMode)
                     {
@@ -775,6 +779,7 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                         std::cout << "[Host] LocalP2P: " << info.local_ip << ":" << info.local_port << " で直接通信開始\n";
                         ResetConsoleColor();
 
+                        SetSendOk();
 
                         break;
 
@@ -790,14 +795,15 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                         std::cout << "[Host] Relay: クライアントとリレー通信開始\n";
                         ResetConsoleColor();
 
+                        SetSendOk();
+
                         break;
                     }
 
-
+                    
 
                  
-                    // 接続元にリレーでリレー受信の返信する
-                    RelaySendCounterToServer(info.external_ip, info.client_name);
+
                 }
 
                 std::this_thread::sleep_for(std::chrono::seconds(1));
