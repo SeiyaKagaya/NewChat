@@ -179,9 +179,15 @@ public:
     std::vector<ClientInfo>& GetClients() { return m_clients; }
     ConnectionMode GetPendingConnectionMode() const { return m_pendingConnectionMode; }
 
-    bool RelaySendCounterToServer(const std::string& clientExternalIp, const std::string& clientName);
+    //bool RelaySendCounterToServer(const std::string& clientExternalIp, const std::string& clientName);
 
     void SetSendOk();
+
+    //カウンターサーバーリレー
+    bool RelaySendReplyToServer(
+        const std::string& targetExternalIp,
+        const std::string& fromName,
+        const std::string& message);
 
 private:
     RakNet::RakPeerInterface* m_peer;
