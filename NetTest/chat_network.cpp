@@ -26,9 +26,7 @@ ChatNetwork::ChatNetwork()
 
 ChatNetwork::~ChatNetwork()
 {
-    // ---------------------------
-  // ① すべてのループを停止指令
-  // ---------------------------
+
     m_running = false;
 
     // パンチループ終了
@@ -37,35 +35,37 @@ ChatNetwork::~ChatNetwork()
     // ---------------------------
     // ② 監視スレッド停止
     // ---------------------------
-    if (m_clientMonitorThread.joinable()) {
-        if (m_clientMonitorActive) m_clientMonitorActive = false;
-        m_clientMonitorThread.join();
+    if (m_clientMonitorThread.joinable())
+    {
+        if (m_clientMonitorActive)
+        {
+            m_clientMonitorActive = false;
+            m_clientMonitorThread.join();
+        }
     }
 
-    if (m_hostMonitorThread.joinable()) {
-        if (m_hostMonitorActive) m_hostMonitorActive = false;
-        m_hostMonitorThread.join();
+    if (m_hostMonitorThread.joinable())
+    {
+        if (m_hostMonitorActive)
+        {
+            m_hostMonitorActive = false;
+            m_hostMonitorThread.join();
+        }
     }
 
-    // ---------------------------
-    // ③ ハートビート停止
-    // ---------------------------
-    //StopHeartbeat();
-
-    // ---------------------------
-    // ④ TCP待ち受け終了
-    // ---------------------------
     if (m_tcpWaiterActive)
     {
         m_tcpWaiterActive = false;
-        if (m_tcpWaiterThread.joinable()) m_tcpWaiterThread.join();
+        if (m_tcpWaiterThread.joinable())
+        {
+            m_tcpWaiterThread.join();
+        }
     }
 
-    // ---------------------------
-    // ⑤ RakNetインスタンス破棄
-    // ---------------------------
     if (m_peer)
+    {
         RakNet::RakPeerInterface::DestroyInstance(m_peer);
+    }
 }
 
 bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp, const std::string& protocol,
@@ -80,6 +80,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
     RakNet::SocketDescriptor socketDescriptor(port, bindIp.c_str());
     int maxConnections = host ? 32 : 1;
     RakNet::StartupResult result = m_peer->Startup(maxConnections, &socketDescriptor, 1);
+
     if (result != RakNet::RAKNET_STARTED)
     {
         SetConsoleColor(4);
@@ -203,26 +204,16 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 
     // 監視スレッド・受信スレッド開始
     m_running = true;
-    //StartHeartbeat();
 
-        //無条件に開通---ここでリレー通信を受け取る
+    //無条件に開通---ここでリレー通信を受け取る
     StartRelayReceiver(youExternalIp);
 
     if (m_isHost)
     {
-        //StartClientMonitor();
-    
         StartRelayPollThread(roomManager, youExternalIp, MyConnectMode);//ホスト1-リレー受信待機
     }
-    else
-    {
-        //StartHostMonitor();
-    }
-
+ 
     m_receiveThread = std::thread(&ChatNetwork::ReceiveLoop, this);
-
-
-
 
     return true;
 }
@@ -231,7 +222,10 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& hostProtocol, unsigned short hostPort, ConnectionMode MyConnectMode)
 {//クライアント側、
 
-    if (m_isHost) return false;
+    if (m_isHost)
+    {
+        return false;
+    }
     if (hostProtocol != "BOTH" && hostProtocol != m_clientProtocol)
     {
         SetConsoleColor(4);
@@ -246,7 +240,8 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
     RakNet::ConnectionAttemptResult r = m_peer->Connect(hostIp.c_str(), hostPort, nullptr, 0);
 
     // 選択方式に応じて処理
-    switch (MyConnectMode) {
+    switch (MyConnectMode) 
+    {
     case ConnectionMode::LocalP2P:
         //なんならここでTCP送信
 
@@ -258,13 +253,8 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
 
             // ホストのハートビート初期値を登録
             m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
-
-            //なんならここでTCP送信
-            //SendPunchDoneTCP(m_hostIp, 55555);
-
             return true;
         }
-
         break;
 
     case ConnectionMode::P2P:
@@ -284,19 +274,12 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
         break;
 
     case ConnectionMode::Relay:
-       
-
+   
         if (r == RakNet::CONNECTION_ATTEMPT_STARTED)
         {
             SetConsoleColor(2);
             std::cout << "リレー通信のためパンチホールは行いません" << hostIp << ":" << hostPort << std::endl;
             ResetConsoleColor();
-
-            // ホストのハートビート初期値を登録
-            //m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
-
-            //なんならここでTCP送信
-            //SendPunchDoneTCP(m_hostIp, 55555);
 
             return true;
         }
@@ -366,6 +349,13 @@ void ChatNetwork::ReceiveLoop()
             }
             case ID_LEAVE_NOTIFICATION:
             {
+                //ホストがクライアントの退席通知を受け取ったら、他のクライアントに該当クライアントが退席したことをsendし、
+                //該当クライアントの情報を削除。
+
+                //クライアントがホストの退席通知を受け取ったら部屋を解散(つまり最初に戻る
+
+
+
                 //if (!m_isHost) {
                 //    SetConsoleColor(4);
                 //    std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
@@ -402,7 +392,8 @@ void ChatNetwork::ReceiveLoop()
                 break;
             }
             case ID_HEARTBEAT:
-            {
+            {//相手の心拍を受信
+
               /*  std::lock_guard<std::mutex> lock(m_heartbeatMutex);
                 m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();*/
                 break;
@@ -435,11 +426,8 @@ void ChatNetwork::ReceiveLoop()
                 }
                 break;
             }
-
-
-            // 🎮 入力系受信
             case ID_GAME_INPUT:
-            {
+            {// 🎮 入力系受信
                 RakNet::BitStream bsIn(packet->data, packet->length, false);
                 bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
 
@@ -455,7 +443,7 @@ void ChatNetwork::ReceiveLoop()
             }
 
             case ID_GAME_REGULAR_UPDATE:
-            {
+            {//定期更新受信
                 RakNet::BitStream bsIn(packet->data, packet->length, false);
                 bsIn.IgnoreBytes(sizeof(RakNet::MessageID));
 
@@ -487,7 +475,7 @@ void ChatNetwork::ReceiveLoop()
             }
 
             case ID_VOICE_PACKET:
-            {
+            {//ボイチャ
                 const char* audioData = reinterpret_cast<const char*>(&packet->data[1]);
                 int dataSize = packet->length - 1;
 
@@ -503,10 +491,6 @@ void ChatNetwork::ReceiveLoop()
                 // DecodeAndPlay(audioData, dataSize);
                 break;
             }
-
-
-
-
             default:
                 break;
             }
@@ -646,7 +630,8 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
 }
 
 void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp, ConnectionMode MyConnectMode)
-{
+{//サーバーから初回リレー受信(ホスト側のみ)
+
     SetConsoleColor(3);
     std::cout << "\n[Host] サーバーからjoin受付開始\n";
     ResetConsoleColor();
@@ -687,10 +672,12 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                     ConnectionMode clientMode = info.connection_mode;
                     ConnectionMode selectedMode;
 
-                    if (sameLan) {
+                    if (sameLan)
+                    {
                         selectedMode = ConnectionMode::LocalP2P;
                     }
-                    else if (clientMode == ConnectionMode::P2P && MyConnectMode == ConnectionMode::P2P) {
+                    else if (clientMode == ConnectionMode::P2P && MyConnectMode == ConnectionMode::P2P) 
+                    {
                         selectedMode = ConnectionMode::P2P;
                     }
                     else if (MyConnectMode == ConnectionMode::Relay) {
@@ -746,8 +733,6 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                     case ConnectionMode::P2P: modeStr = "P2P"; break;
                     case ConnectionMode::Relay: modeStr = "Relay"; break;
                     }
-                    std::cout << "[Relay] Selected connection mode for client "
-                        << info.client_name << ": " << modeStr << "\n";
 
                     // --- 接続モード別処理 ---
                     switch (selectedMode)
