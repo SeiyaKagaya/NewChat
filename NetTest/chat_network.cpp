@@ -349,53 +349,115 @@ void ChatNetwork::ReceiveLoop()
             }
             case ID_LEAVE_NOTIFICATION:
             {
-                //ホストがクライアントの退席通知を受け取ったら、他のクライアントに該当クライアントが退席したことをsendし、
-                //該当クライアントの情報を削除。
+                // ===========================
+                // 退席通知受信
+                // ===========================
 
-                //クライアントがホストの退席通知を受け取ったら部屋を解散(つまり最初に戻る
+                RakNet::BitStream bs(packet->data, packet->length, false);
+                RakNet::MessageID msgId;
+                bs.Read(msgId);
 
+                // 名前（送信者）を受け取る
+                unsigned int len = 0;
+                bs.Read(len);
+                std::string from(len, '\0');
+                if (len > 0) bs.Read(&from[0], len);
 
+                // ---------------------------
+                // クライアント側
+                // ---------------------------
+                if (!m_isHost)
+                {
+                    if (from == "host" || from == m_hostIp)
+                    {
+                        // ホストが落ちた場合
+                        SetConsoleColor(4);
+                        std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
+                        ResetConsoleColor();
 
-                //if (!m_isHost) {
-                //    SetConsoleColor(4);
-                //    std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
-                //    ResetConsoleColor();
-                //    m_forceExit = true;
-                //    Stop();  // クライアントは最初に戻る
-                //    m_running = false;
-                //}
-                //else {
-                //    std::lock_guard<std::mutex> lock(m_clientsMutex);
-                //    auto it = std::find_if(m_clients.begin(), m_clients.end(),
-                //        [&](const ClientInfo& c) { return c.address == packet->systemAddress; });
-                //    if (it != m_clients.end()) {
-                //        SetConsoleColor(4);
-                //        std::cout << "[Info] クライアント " << it->userName << " が退出しました。\n";
-                //        ResetConsoleColor();
+                        m_forceExit = true;
+                        Stop();  // クライアントは最初に戻る
+                        m_running = false;
+                    }
+                    else
+                    {
+                        // 他クライアントが退出した場合
+                        SetConsoleColor(4);
+                        std::cout << "[Info] " << from << " が退出しました。\n";
+                        ResetConsoleColor();
+                    }
+                }
+                // ---------------------------
+                // ホスト側
+                // ---------------------------
+                else
+                {
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
 
-                //        // 心拍管理からも削除
-                //        {
-                //            std::lock_guard<std::mutex> hbLock(m_heartbeatMutex);
-                //            m_lastHeartbeat.erase(it->address);
-                //        }
+                    // 対象クライアントを検索（SystemAddress一致で）
+                    auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                        [&](const ClientInfo& c) { return c.address == packet->systemAddress || c.userName == from; });
 
-                //        // m_canSend リセット
-                //        {
-                //            std::lock_guard<std::mutex> lk(m_canSendMutex);
-                //            m_canSend = false;
-                //        }
+                    if (it != m_clients.end())
+                    {
+                        SetConsoleColor(4);
+                        std::cout << "[Info] クライアント " << it->userName << " が退出しました。\n";
+                        ResetConsoleColor();
 
-                //        // 退出クライアント情報を即削除
-                //        m_clients.erase(it);
-                //    }
-                //}
+                        // 削除前に、他クライアントへ通知を送信
+                        for (auto& c : m_clients)
+                        {
+                            if (c.guid == it->guid) continue; // 退出本人は除外
+
+                            switch (c.connectionMode)
+                            {
+                            case ConnectionMode::Relay:
+                                RelaySendDataToServer(c.externalIp, "system", "leave", it->userName);
+                                break;
+
+                            case ConnectionMode::P2P:
+                            case ConnectionMode::LocalP2P:
+                            {
+                                RakNet::BitStream bsOut;
+                                bsOut.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
+                                unsigned int len2 = static_cast<unsigned int>(it->userName.size());
+                                bsOut.Write(len2);
+                                bsOut.Write(it->userName.c_str(), len2);
+
+                                RakNet::SystemAddress targetAddr;
+                                if (c.connectionMode == ConnectionMode::LocalP2P)
+                                    targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                                else
+                                    targetAddr = c.address;
+
+                                m_peer->Send(&bsOut, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, targetAddr, false);
+                                break;
+                            }
+                            }
+                        }
+
+                        // クライアントリストから削除
+                        m_clients.erase(it);
+
+                        // クライアントが0人になったら送信停止
+                        if (m_clients.empty())
+                        {
+                            SetConsoleColor(4);
+                            std::cout << "[Info] クライアントが0人です。\n";
+                            ResetConsoleColor();
+                            std::lock_guard<std::mutex> lk(m_canSendMutex);
+                            m_canSend = false;
+                        }
+                    }
+                }
+
                 break;
             }
             case ID_HEARTBEAT:
             {//相手の心拍を受信
 
-              /*  std::lock_guard<std::mutex> lock(m_heartbeatMutex);
-                m_lastHeartbeat[packet->systemAddress] = std::chrono::steady_clock::now();*/
+                //定期的に受信する＝相手が生きてる。
+
                 break;
             }
             case ID_GAME_MESSAGE:
@@ -616,7 +678,7 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
         SetConsoleColor(2);
         std::cout << "[TCP] PUNCH_DONE送信 -> m_canSend = true\n";
         ResetConsoleColor();
-        SetSendOk();
+        SetSendOk();//チャット可能に
     }
     else
     {
@@ -914,8 +976,7 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
                     auto json = nlohmann::json::parse(response);
                     for (auto& item : json)
                     {
-                        //std::cout << "サーバーリレー受信[デバッグ用。これがでたら初回リレーがこっちに吸い込まれてる]" << std::endl;
-
+                      
                         std::string from = item["user"];
                         std::string payloadType = item.value("payload_type", "");
                         std::string payload = item.value("payload", "");
@@ -939,6 +1000,84 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
                         }
                         else if (payloadType == "leave")
                         {
+                            // Relay経由の退席通知
+                            SetConsoleColor(4);
+                            std::cout << "[Relay] " << from << " が退出しました。\n";
+                            ResetConsoleColor();
+
+                            if (m_isHost)
+                            {
+                                // ---------------------------------------
+                                // ホスト側：他のクライアントに転送して通知を共有
+                                // ---------------------------------------
+                                std::lock_guard<std::mutex> lock(m_clientsMutex);
+
+                                // 該当クライアントをリストから削除
+                                auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                                    [&](const ClientInfo& c) { return c.userName == from; });
+
+                                if (it != m_clients.end())
+                                {
+                                    std::cout << "[RelayHost] クライアント " << it->userName << " 情報を削除します。\n";
+                                    m_clients.erase(it);
+                                }
+
+                                // 他の全クライアントに転送（リレー・P2P両方）
+                                for (auto& c : m_clients)
+                                {
+                                    if (c.userName == from) continue;
+
+                                    switch (c.connectionMode)
+                                    {
+                                    case ConnectionMode::Relay:
+                                        RelaySendDataToServer(c.externalIp, "system", "leave", from);
+                                        break;
+
+                                    case ConnectionMode::P2P:
+                                    case ConnectionMode::LocalP2P:
+                                    {
+                                        RakNet::BitStream bs;
+                                        bs.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
+                                        unsigned int len = static_cast<unsigned int>(from.size());
+                                        bs.Write(len);
+                                        bs.Write(from.c_str(), len);
+
+                                        RakNet::SystemAddress targetAddr;
+                                        if (c.connectionMode == ConnectionMode::LocalP2P)
+                                            targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                                        else
+                                            targetAddr = c.address;
+
+                                        m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, targetAddr, false);
+                                        break;
+                                    }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // ---------------------------------------
+                                // クライアント側
+                                // ---------------------------------------
+                                if (from == m_hostIp || from == "host")
+                                {
+                                    // ホストが落ちた場合
+                                    SetConsoleColor(4);
+                                    std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
+                                    ResetConsoleColor();
+
+                                    m_forceExit = true;
+                                    Stop();
+                                    m_running = false;
+                                }
+                                else
+                                {
+                                    // 他クライアントが退出した場合
+                                    SetConsoleColor(4);
+                                    std::cout << "[Info] " << from << " が退出しました。\n";
+                                    ResetConsoleColor();
+                                }
+                            }
                         }
                         else if (payloadType == "relay_ack")
                         {//初回リレーのお返しがきた
@@ -1152,12 +1291,6 @@ void ChatNetwork::SendMessage(const std::string& message)
     {
         std::lock_guard<std::mutex> lock(m_clientsMutex);
 
- /*       std::cout << "[Host] m_clients size=" << m_clients.size() << std::endl;
-        for (size_t i = 0; i < m_clients.size(); ++i)
-        {
-            std::cout << "  [" << i << "] " << m_clients[i].address.ToString() << std::endl;
-        }*/
-
         for (auto& c : m_clients)
         {
             std::cout << "[Host->Client送信] 宛先GUID: " << c.guid.ToString() << std::endl;
@@ -1204,6 +1337,78 @@ void ChatNetwork::SendMessage(const std::string& message)
     }
 }
 
+void ChatNetwork::SendExit()
+{
+    // ------------------------------
+    // 共通ビットストリーム作成
+    // ------------------------------
+    RakNet::BitStream bs;
+    bs.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
+
+    std::string senderName = m_userName.empty() ? "匿名" : m_userName;
+    unsigned int len = static_cast<unsigned int>(senderName.size());
+    bs.Write(len);
+    bs.Write(senderName.c_str(), len);
+
+    if (m_isHost)
+    {
+        // ==========================
+        // ホスト → 全員に退出通知
+        // ==========================
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        for (auto& c : m_clients)
+        {
+            std::cout << "[Host->Client退出通知] 宛先GUID: " << c.guid.ToString() << std::endl;
+
+            switch (c.connectionMode)
+            {
+            case ConnectionMode::Relay:
+                RelaySendDataToServer(c.externalIp, m_userName, "leave", "host_exit");
+                break;
+
+            case ConnectionMode::P2P:
+            case ConnectionMode::LocalP2P:
+            {
+                RakNet::SystemAddress targetAddr;
+                if (c.connectionMode == ConnectionMode::LocalP2P)
+                    targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                else
+                    targetAddr = c.address;
+
+                m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, targetAddr, false);
+                break;
+            }
+            }
+        }
+
+        // 自身の終了処理
+        std::cout << "[Host] 自身のセッションを終了します。\n";
+        Stop();
+    }
+    else
+    {
+        // ==========================
+        // クライアント → ホストのみ
+        // ==========================
+        std::cout << "[Client] ホストに退出通知を送信\n";
+
+        if (m_pendingConnectionMode == ConnectionMode::Relay)
+        {
+            RelaySendDataToServer(m_hostIp, m_userName, "leave", "client_exit");
+        }
+        else
+        {
+            if (m_peer->NumberOfConnections() > 0)
+            {
+                RakNet::SystemAddress target = m_peer->GetSystemAddressFromIndex(0);
+                m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, target, false);
+            }
+        }
+
+        // 自身の終了処理
+        Stop();
+    }
+}
 
 
 void ChatNetwork::SetSendOk()

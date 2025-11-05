@@ -381,19 +381,18 @@ bool ClientFlow(ChatNetwork& chatNetwork, RoomManager& roomManager, std::string&
 //----------------------------------------------
 void ChatLoop(ChatNetwork& chatNetwork)
 {
-
     std::thread recvThread(&ChatNetwork::ReceiveLoop, &chatNetwork);
 
     std::cout << "チャット開設作業開始。終了するには x を入力してください。\n";
+
     while (true)
     {
         std::string inputMessage;
 
-        if (chatNetwork.GetForceExit()) { // ★追加
-            //std::cout << "\n自動的に最初の画面に戻ります...\n";
+        // 強制終了フラグ（ホスト離脱など）
+        if (chatNetwork.GetForceExit()) {
             break;
         }
-
 
         if (std::getline(std::cin, inputMessage) && !inputMessage.empty())
         {
@@ -403,58 +402,32 @@ void ChatLoop(ChatNetwork& chatNetwork)
                 std::cout << "チャットを終了します。\n";
                 SetConsoleColor(WHITE);
 
-                // 退出通知を送信
-                //if (chatNetwork.IsHost()) {
-                //    chatNetwork.BroadcastLeaveNotification(); // 新規関数
-                //}
-                //else {
-                //    chatNetwork.SendLeaveNotification(); // 新規関数
-                //}
+                // 退出通知送信
+                chatNetwork.SendExit(); // ← ここでSendExit()呼び出しに統一
 
- /*               ClientInfo info;
-                info.connectionMode = chatNetwork.IsHost() ? ConnectionMode::P2P : chatNetwork.GetPendingConnectionMode();
-                chatNetwork.SendLeaveNotificationToClientOrHost(info);*/
-
-                chatNetwork.Stop();
                 break;
             }
-            chatNetwork.SendMessage(inputMessage);
-        }
 
-
-        auto now = std::chrono::steady_clock::now();
-
-        if (inputMessage == "x" || inputMessage == "X")
-        {
-            SetConsoleColor(RED);
-            std::cout << "チャットを終了します。\n";
-            SetConsoleColor(WHITE);
-
-            if (chatNetwork.IsHost()) {
-                // ホスト側は全クライアントに送信
-               /* std::lock_guard<std::mutex> lock(chatNetwork.GetClientsMutex());
-                for (auto& c : chatNetwork.GetClients()) {
-                    chatNetwork.SendLeaveNotificationToClientOrHost(c);
-                }*/
+            // 通常メッセージ送信
+            if (chatNetwork.GetCanSend())
+            {
+                chatNetwork.SendMessage(inputMessage);
             }
-            else {
-                // クライアント側はホストに送信
-               /* ClientInfo hostInfo;
-                hostInfo.connectionMode = chatNetwork.GetPendingConnectionMode();
-                chatNetwork.SendLeaveNotificationToClientOrHost(hostInfo);*/
+            else
+            {
+                SetConsoleColor(RED);
+                std::cout << "[まだ送信可能状態でありません]\n";
+                SetConsoleColor(WHITE);
             }
-
-            chatNetwork.Stop();
-            break;
         }
-
-
-
     }
 
+    // スレッド終了待ち
+    chatNetwork.Stop();
     if (recvThread.joinable())
         recvThread.join();
 }
+
 //----------------------------------------------
 // サーバー接続チェック
 //----------------------------------------------

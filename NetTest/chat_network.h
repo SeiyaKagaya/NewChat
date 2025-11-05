@@ -119,26 +119,14 @@ public:
     std::string ToBase64(const std::string& input);
     std::string FromBase64(const std::string& input);
 
-    //void SendLeaveNotification();        // クライアント用
-    //void BroadcastLeaveNotification();   // ホスト用
     bool IsHost() const { return m_isHost; }
 
-    //void StartHeartbeat();
-    //void StopHeartbeat();
 
     RakNet::SystemAddress GetMyHostAddress() const;
-    //std::chrono::steady_clock::time_point GetLastHeartbeat(RakNet::SystemAddress addr);
-    //void CheckClientTimeouts();
-
-    //std::optional<std::chrono::steady_clock::time_point> GetLastHeartbeatOpt(RakNet::SystemAddress addr);
 
     void StartRelayPollThread(RoomManager& roomManager, const std::string& hostExternalIp, ConnectionMode MyConnectMode);
 
-    //void StartClientMonitor();  // ホストがクライアント生存確認
-    //void StartHostMonitor();    // クライアントがホスト生存確認
-
     bool GetForceExit() { return m_forceExit; }
-
 
     // 入力系送信（随時）
     void SendGameInput(const AnyTime& inputData);
@@ -152,42 +140,27 @@ public:
     //スター型P2Pのリレー(サーバーリレーでない。上記３つや上記の受信時など、補助ツールに近い)
     void RelayPacket(RelayType type, const RakNet::SystemAddress& sender, const RakNet::BitStream& data);
    
-    //void CheckClientTimeouts();
-    //void CheckHostTimeout();
 
 
-    // ===============================
-// Relay通信関連
-// ===============================
-    bool RelaySendDataToServer(
-        const std::string& hostIp,
-        const std::string& fromName,
-        const std::string& payloadType,
-        const std::string& payload);
+    // Relay通信関連
+    bool RelaySendDataToServer(const std::string& hostIp, const std::string& fromName, const std::string& payloadType, const std::string& payload);
    
 
     void StartRelayReceiver(const std::string& hostExternalIp);
     
-    //生存確認送信関数
-///void SendHeartbeatToClientOrHost(const ClientInfo& info);
-
-
-    //退出通知送信関数
-    //void SendLeaveNotificationToClientOrHost(const ClientInfo& info);
-
     std::mutex& GetClientsMutex() { return m_clientsMutex; }
     std::vector<ClientInfo>& GetClients() { return m_clients; }
     ConnectionMode GetPendingConnectionMode() const { return m_pendingConnectionMode; }
 
-    //bool RelaySendCounterToServer(const std::string& clientExternalIp, const std::string& clientName);
-
     void SetSendOk();
 
     //カウンターサーバーリレー
-    bool RelaySendReplyToServer(
-        const std::string& targetExternalIp,
-        const std::string& fromName,
-        const std::string& message);
+    bool RelaySendReplyToServer(const std::string& targetExternalIp, const std::string& fromName, const std::string& message);
+
+    //退席通知送信
+    void SendExit();
+
+    bool GetCanSend() { return m_canSend; }
 
 private:
     RakNet::RakPeerInterface* m_peer;
