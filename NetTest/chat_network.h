@@ -56,9 +56,15 @@ struct ClientInfo {
     unsigned short localPort = 0;
     bool isSameLAN = false;     // LAN内判定
     std::string userName;
-    std::chrono::steady_clock::time_point connectedTime;
+    //std::chrono::steady_clock::time_point connectedTime;
+    std::chrono::steady_clock::time_point lastHeartbeatTime;
+
+
+
+
 
     ConnectionMode connectionMode = ConnectionMode::Relay; // ★追加
+
 };
 
 
@@ -160,6 +166,18 @@ public:
     //退席通知送信
     void SendExit();
 
+    //心拍送信ループ
+    void StartHeartbeatLoop();
+
+    //心拍送信
+    void SendHeartbeat();
+
+    //クライアント監視スレッド
+    void StartClientMonitorLoop();
+
+    //ホスト監視スレッド
+    void StartHostMonitorLoop();
+
     bool GetCanSend() { return m_canSend; }
 
 private:
@@ -207,13 +225,21 @@ private:
     std::thread m_heartbeatThread;
     std::mutex m_heartbeatMutex;
     std::map<RakNet::SystemAddress, std::chrono::steady_clock::time_point> m_lastHeartbeat; // ホスト用
-    std::chrono::seconds m_heartbeatTimeout{ 10 };
+    std::chrono::seconds m_heartbeatTimeout{ 6 };//接続タイムアウト判定
+
+    // クライアント側：最後にホストからハートビートを受信した時刻
+    std::chrono::steady_clock::time_point m_lastHostHeartbeatTime;
+
 
   std::atomic<bool> m_clientMonitorActive{ false };  // ホスト側監視有効
     std::thread m_clientMonitorThread;                 // ホスト→クライアント監視スレッド
 
     std::atomic<bool> m_hostMonitorActive{ false };    // クライアント側監視有効
     std::thread m_hostMonitorThread;                   // クライアント→ホスト監視スレッド
+
+
+
+
 
     std::thread m_receiveThread;
 

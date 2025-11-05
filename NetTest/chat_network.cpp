@@ -19,7 +19,8 @@ ChatNetwork::ChatNetwork()
     m_isHost(false),
     m_port(0),
     m_running(false),
-    m_canSend(false)
+    m_canSend(false),
+    m_lastHostHeartbeatTime(std::chrono::steady_clock::now())
 {
     m_peer = RakNet::RakPeerInterface::GetInstance();
 }
@@ -35,7 +36,7 @@ ChatNetwork::~ChatNetwork()
     // ---------------------------
     // ② 監視スレッド停止
     // ---------------------------
-    if (m_clientMonitorThread.joinable())
+  /*  if (m_clientMonitorThread.joinable())
     {
         if (m_clientMonitorActive)
         {
@@ -51,7 +52,7 @@ ChatNetwork::~ChatNetwork()
             m_hostMonitorActive = false;
             m_hostMonitorThread.join();
         }
-    }
+    }*/
 
     if (m_tcpWaiterActive)
     {
@@ -180,6 +181,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
                                             SetConsoleColor(2);
                                             std::cout << "[TCP] パンチ完遂通知受信 -> m_canSend = true\n";
                                             ResetConsoleColor();
+                                            StartClientMonitorLoop();//クライアント監視開始
                                             SetSendOk();
                                         }
                                     }
@@ -454,9 +456,27 @@ void ChatNetwork::ReceiveLoop()
                 break;
             }
             case ID_HEARTBEAT:
-            {//相手の心拍を受信
+            {
+                RakNet::BitStream bs(packet->data, packet->length, false);
+                RakNet::MessageID msgId; bs.Read(msgId);
 
-                //定期的に受信する＝相手が生きてる。
+                unsigned int len = 0; bs.Read(len);
+                std::string msg(len, '\0');
+                if (len > 0) bs.Read(&msg[0], len);
+
+                if (m_isHost)
+                {
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
+                    auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                        [&](const ClientInfo& c) { return c.address == packet->systemAddress; });
+                    if (it != m_clients.end())
+                        it->lastHeartbeatTime = std::chrono::steady_clock::now();
+                }
+                else
+                {
+                    // ホストからのHeartbeat
+                    m_lastHostHeartbeatTime = std::chrono::steady_clock::now();
+                }
 
                 break;
             }
@@ -678,6 +698,8 @@ void ChatNetwork::SendPunchDoneTCP(const std::string& targetIp, unsigned short p
         SetConsoleColor(2);
         std::cout << "[TCP] PUNCH_DONE送信 -> m_canSend = true\n";
         ResetConsoleColor();
+        StartHeartbeatLoop();
+        StartHostMonitorLoop();//ホスト監視開始
         SetSendOk();//チャット可能に
     }
     else
@@ -782,7 +804,10 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                             c.localPort = info.local_port;
                             c.isSameLAN = sameLan;
                             c.userName = info.client_name;
-                            c.connectedTime = std::chrono::steady_clock::now();
+                           // c.connectedTime = std::chrono::steady_clock::now();
+                            // ✅ これを追加！
+                            c.lastHeartbeatTime = std::chrono::steady_clock::now();
+
                             c.guid = m_peer->GetGuidFromSystemAddress(addr);
                             m_clients.push_back(c);
                         }
@@ -803,6 +828,8 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                         SetConsoleColor(1);
                         std::cout << "[Host] LocalP2P: " << info.local_ip << ":" << info.local_port << " で直接通信開始\n";
                         ResetConsoleColor();
+                        StartHeartbeatLoop();
+                        StartClientMonitorLoop();//クライアント監視開始
                         SetSendOk();
                         break;
 
@@ -817,6 +844,8 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                         SetConsoleColor(1);
                         std::cout << "[Host] Relay: クライアントとリレー通信開始\n";
                         ResetConsoleColor();
+                        StartHeartbeatLoop();
+                        StartClientMonitorLoop();//クライアント監視開始
                         SetSendOk();
                         break;
                     }
@@ -836,6 +865,7 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
 
 void ChatNetwork::Stop()
 {
+    m_heartbeatActive = false;
     m_running = false;
     StopPunchLoop();
 
@@ -995,8 +1025,23 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
                         else if (payloadType == "regular") {
                             // TODO: game regular update反映
                         }
-                        else if (payloadType == "heartbeat") {
-                           
+                        else if (payloadType == "heartbeat")
+                        {
+                            std::string from = item["user"];
+                            // 最終受信時刻更新
+                            if (m_isHost)
+                            {
+                                std::lock_guard<std::mutex> lock(m_clientsMutex);
+                                auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                                    [&](const ClientInfo& c) { return c.userName == from; });
+                                if (it != m_clients.end())
+                                    it->lastHeartbeatTime = std::chrono::steady_clock::now();
+                            }
+                            else
+                            {
+                                // ホストから生存信号
+                                m_lastHostHeartbeatTime = std::chrono::steady_clock::now();
+                            }
                         }
                         else if (payloadType == "leave")
                         {
@@ -1084,6 +1129,8 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
                             SetConsoleColor(15);
                             std::cout << "[Relay]デバッグチャット(relay_ack) " << from << " : " << payload << std::endl;
                             ResetConsoleColor();
+                            StartHeartbeatLoop();//クライアント側
+                            StartHostMonitorLoop();//ホストの監視開始
                             SetSendOk();
                         }
                         
@@ -1414,6 +1461,176 @@ void ChatNetwork::SendExit()
         m_running = false;
     }
 }
+
+void ChatNetwork::StartHeartbeatLoop()
+{
+    m_heartbeatActive = true;
+    std::thread([this]() {
+        while (m_heartbeatActive && m_running)
+        {
+            SendHeartbeat();
+            std::this_thread::sleep_for(std::chrono::seconds(3)); // 3秒ごとに送信
+        }
+        }).detach();
+}
+
+void ChatNetwork::SendHeartbeat()
+{
+    if (!m_running) return;
+
+    if (m_isHost)
+    {
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        for (auto& c : m_clients)
+        {
+            switch (c.connectionMode)
+            {
+            case ConnectionMode::Relay:
+                RelaySendDataToServer(c.externalIp, "system", "heartbeat", "alive");
+                break;
+
+            case ConnectionMode::P2P:
+            case ConnectionMode::LocalP2P:
+            {
+                RakNet::BitStream bs;
+                bs.Write((RakNet::MessageID)ID_HEARTBEAT);
+                std::string msg = "alive";
+                unsigned int len = static_cast<unsigned int>(msg.size());
+                bs.Write(len);
+                bs.Write(msg.c_str(), len);
+
+                RakNet::SystemAddress targetAddr;
+                if (c.connectionMode == ConnectionMode::LocalP2P)
+                    targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                else
+                    targetAddr = c.address;
+
+                m_peer->Send(&bs, LOW_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 0, targetAddr, false);
+                break;
+            }
+            }
+        }
+    }
+    else
+    {
+        // クライアント -> ホスト
+        if (m_pendingConnectionMode == ConnectionMode::Relay)
+            RelaySendDataToServer(m_hostIp, "system", "heartbeat", "alive");
+        else
+        {
+            RakNet::BitStream bs;
+            bs.Write((RakNet::MessageID)ID_HEARTBEAT);
+            std::string msg = "alive";
+            unsigned int len = static_cast<unsigned int>(msg.size());
+            bs.Write(len);
+            bs.Write(msg.c_str(), len);
+
+            RakNet::SystemAddress target = m_peer->GetSystemAddressFromIndex(0);
+            m_peer->Send(&bs, LOW_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 0, target, false);
+        }
+    }
+}
+
+//クライアント監視スレッド
+void ChatNetwork::StartClientMonitorLoop()
+{
+    if (!m_isHost || m_clientMonitorActive) return;
+    m_clientMonitorActive = true;
+
+    m_clientMonitorThread = std::thread([this]()     
+    {
+        while (m_clientMonitorActive && m_running)
+        {
+            {
+                std::lock_guard<std::mutex> lock(m_clientsMutex);
+                auto now = std::chrono::steady_clock::now();
+
+                for (auto it = m_clients.begin(); it != m_clients.end();)
+                {
+                    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->lastHeartbeatTime);
+                    if (elapsed > m_heartbeatTimeout)
+                    {
+                        SetConsoleColor(4);
+                        std::cout << "[Monitor] クライアント " << it->userName << " の心拍が停止 (" << elapsed.count() << "s)。退出扱いにします。\n";
+                        ResetConsoleColor();
+
+                        // 他のクライアントに退席通知を送る
+                        for (auto& c : m_clients)
+                        {
+                            if (c.guid == it->guid) continue;
+
+                            switch (c.connectionMode)
+                            {
+                            case ConnectionMode::Relay:
+                                RelaySendDataToServer(c.externalIp, "system", "leave", it->userName);
+                                break;
+                            case ConnectionMode::P2P:
+                            case ConnectionMode::LocalP2P:
+                            {
+                                RakNet::BitStream bs;
+                                bs.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
+                                unsigned int len = static_cast<unsigned int>(it->userName.size());
+                                bs.Write(len);
+                                bs.Write(it->userName.c_str(), len);
+
+                                RakNet::SystemAddress targetAddr;
+                                if (c.connectionMode == ConnectionMode::LocalP2P)
+                                    targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                                else
+                                    targetAddr = c.address;
+
+                                m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 0, targetAddr, false);
+                                break;
+                            }
+                            }
+                        }
+
+                        it = m_clients.erase(it);
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+            }
+
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    });
+}
+
+
+//ホスト監視スレッド
+void ChatNetwork::StartHostMonitorLoop()
+{
+    if (m_isHost || m_hostMonitorActive) return;
+    m_hostMonitorActive = true;
+
+    m_hostMonitorThread = std::thread([this]() 
+    {
+        while (m_hostMonitorActive && m_running)
+        {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastHostHeartbeatTime);
+
+            if (elapsed > m_heartbeatTimeout)
+            {
+                SetConsoleColor(4);
+                std::cout << "[Monitor] ホストから " << elapsed.count() << " 秒間応答がありません。切断扱いにします。\n";
+                ResetConsoleColor();
+
+                m_forceExit = true;
+                Stop();
+                m_running = false;
+                break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    });
+}
+
+
 
 
 void ChatNetwork::SetSendOk()
