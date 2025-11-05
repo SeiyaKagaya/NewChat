@@ -1383,7 +1383,10 @@ void ChatNetwork::SendExit()
 
         // 自身の終了処理
         std::cout << "[Host] 自身のセッションを終了します。\n";
-        Stop();
+
+        m_forceExit = true;
+        Stop();  // クライアントは最初に戻る
+        m_running = false;
     }
     else
     {
@@ -1406,7 +1409,9 @@ void ChatNetwork::SendExit()
         }
 
         // 自身の終了処理
-        Stop();
+        m_forceExit = true;
+        Stop();  // クライアントは最初に戻る
+        m_running = false;
     }
 }
 
