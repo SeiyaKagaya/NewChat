@@ -451,6 +451,10 @@ void ChatNetwork::ReceiveLoop()
             }
             case ID_HEARTBEAT:
             {//相手の心拍取得
+                SetConsoleColor(LIGHT_YELLOW);
+                std::cout << "[Relay]心拍受信 " << from << std::endl;
+                SetConsoleColor(WHITE);
+
                 RakNet::BitStream bs(packet->data, packet->length, false);
                 RakNet::MessageID msgId; bs.Read(msgId);
 
@@ -1047,6 +1051,10 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
                         }
                         else if (payloadType == "heartbeat")
                         {//心拍受信
+                            SetConsoleColor(LIGHT_YELLOW);
+                            std::cout << "[Relay]心拍受信 " << from << std::endl;
+                            SetConsoleColor(WHITE);
+
                             std::string from = item["user"];
                             // 最終受信時刻更新
                             if (m_isHost)
@@ -1490,6 +1498,10 @@ void ChatNetwork::SendExit()
 //心拍送信ループ
 void ChatNetwork::StartHeartbeatLoop()
 {
+    SetConsoleColor(LIGHT_YELLOW);
+    std::cout << "[info]心拍送信ループ起動 " << from << std::endl;
+    SetConsoleColor(WHITE);
+
     m_heartbeatActive = true;
     std::thread([this]() {
         while (m_heartbeatActive && m_running)
@@ -1505,6 +1517,10 @@ void ChatNetwork::SendHeartbeat()
 {
     if (!m_running) return;
 
+    SetConsoleColor(LIGHT_YELLOW);
+    std::cout << "[info]心拍送信 " << from << std::endl;
+    SetConsoleColor(WHITE);
+
     if (m_isHost)
     {
         std::lock_guard<std::mutex> lock(m_clientsMutex);
@@ -1513,12 +1529,21 @@ void ChatNetwork::SendHeartbeat()
             switch (c.connectionMode)
             {
             case ConnectionMode::Relay:
+
+                SetConsoleColor(LIGHT_YELLOW);
+                std::cout << "[リレー]心拍送信 " << from << std::endl;
+                SetConsoleColor(WHITE);
+
                 RelaySendDataToServer(c.externalIp, "system", "heartbeat", "alive");
                 break;
 
             case ConnectionMode::P2P:
             case ConnectionMode::LocalP2P:
             {
+                SetConsoleColor(LIGHT_YELLOW);
+                std::cout << "[UDP]心拍送信 " << from << std::endl;
+                SetConsoleColor(WHITE);
+
                 RakNet::BitStream bs;
                 bs.Write((RakNet::MessageID)ID_HEARTBEAT);
                 std::string msg = "alive";
@@ -1542,9 +1567,19 @@ void ChatNetwork::SendHeartbeat()
     {
         // クライアント -> ホスト
         if (m_pendingConnectionMode == ConnectionMode::Relay)
+        {
+            SetConsoleColor(LIGHT_YELLOW);
+            std::cout << "[リレ－]心拍送信 " << from << std::endl;
+            SetConsoleColor(WHITE);
+
             RelaySendDataToServer(m_hostIp, "system", "heartbeat", "alive");
+        }
         else
         {
+            SetConsoleColor(LIGHT_YELLOW);
+            std::cout << "[UDP]心拍送信 " << from << std::endl;
+            SetConsoleColor(WHITE);
+
             RakNet::BitStream bs;
             bs.Write((RakNet::MessageID)ID_HEARTBEAT);
             std::string msg = "alive";
