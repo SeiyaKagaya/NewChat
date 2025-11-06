@@ -895,7 +895,7 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                     }
                     else
                     {
-                        std::string replyMsg = "relay_ack_from_host:" + std::to_string(m_nextClientId - 1);
+                        std::string replyMsg = "relay_ack_from_host:" + std::to_string(m_nextClientId - 1) + RoomManager::UrlEncode(GetLocalIPAddress());
                         RelaySendReplyToServer(info.external_ip, m_userName, replyMsg);
                     }
 
@@ -1019,7 +1019,7 @@ void ChatNetwork::StartRelayReceiver(const std::string& hostExternalIp)
     std::thread([this, hostExternalIp]() {
         while (m_relayReceiverActive)
         {
-            std::string url = "http://210.131.217.223:12345/server_relay.php?action=relay_recv&host_ip=" + hostExternalIp;
+            std::string url = "http://210.131.217.223:12345/server_relay.php?action=relay_recv&host_ip=" + hostExternalIp  + "&local_ip=" + GetLocalIPAddress();  // ← 追加！
             std::string response;
             if (RoomManager::HttpGet(url, response))
             {
