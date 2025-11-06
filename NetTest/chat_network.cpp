@@ -452,7 +452,7 @@ void ChatNetwork::ReceiveLoop()
             case ID_HEARTBEAT:
             {//相手の心拍取得
                 SetConsoleColor(LIGHT_YELLOW);
-                std::cout << "[Relay]心拍受信 " << from << std::endl;
+                std::cout << "[Relay]心拍受信 "  << std::endl;
                 SetConsoleColor(WHITE);
 
                 RakNet::BitStream bs(packet->data, packet->length, false);
@@ -1499,7 +1499,7 @@ void ChatNetwork::SendExit()
 void ChatNetwork::StartHeartbeatLoop()
 {
     SetConsoleColor(LIGHT_YELLOW);
-    std::cout << "[info]心拍送信ループ起動 " << from << std::endl;
+    std::cout << "[info]心拍送信ループ起動 "  << std::endl;
     SetConsoleColor(WHITE);
 
     m_heartbeatActive = true;
@@ -1518,7 +1518,7 @@ void ChatNetwork::SendHeartbeat()
     if (!m_running) return;
 
     SetConsoleColor(LIGHT_YELLOW);
-    std::cout << "[info]心拍送信 " << from << std::endl;
+    std::cout << "[info]心拍送信 "  << std::endl;
     SetConsoleColor(WHITE);
 
     if (m_isHost)
@@ -1531,7 +1531,7 @@ void ChatNetwork::SendHeartbeat()
             case ConnectionMode::Relay:
 
                 SetConsoleColor(LIGHT_YELLOW);
-                std::cout << "[リレー]心拍送信 " << from << std::endl;
+                std::cout << "[リレー]心拍送信 "  << std::endl;
                 SetConsoleColor(WHITE);
 
                 RelaySendDataToServer(c.externalIp, "system", "heartbeat", "alive");
@@ -1541,7 +1541,7 @@ void ChatNetwork::SendHeartbeat()
             case ConnectionMode::LocalP2P:
             {
                 SetConsoleColor(LIGHT_YELLOW);
-                std::cout << "[UDP]心拍送信 " << from << std::endl;
+                std::cout << "[UDP]心拍送信 " << std::endl;
                 SetConsoleColor(WHITE);
 
                 RakNet::BitStream bs;
@@ -1569,7 +1569,7 @@ void ChatNetwork::SendHeartbeat()
         if (m_pendingConnectionMode == ConnectionMode::Relay)
         {
             SetConsoleColor(LIGHT_YELLOW);
-            std::cout << "[リレ－]心拍送信 " << from << std::endl;
+            std::cout << "[リレ－]心拍送信 "  << std::endl;
             SetConsoleColor(WHITE);
 
             RelaySendDataToServer(m_hostIp, "system", "heartbeat", "alive");
@@ -1577,7 +1577,7 @@ void ChatNetwork::SendHeartbeat()
         else
         {
             SetConsoleColor(LIGHT_YELLOW);
-            std::cout << "[UDP]心拍送信 " << from << std::endl;
+            std::cout << "[UDP]心拍送信 "  << std::endl;
             SetConsoleColor(WHITE);
 
             RakNet::BitStream bs;
