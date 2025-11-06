@@ -133,9 +133,6 @@ int main()
     return 0;
 }
 
-
-
-
 //----------------------------------------------
 // ホスト側フロー
 //----------------------------------------------
@@ -396,7 +393,7 @@ void ChatLoop(ChatNetwork& chatNetwork)
 
         if (std::getline(std::cin, inputMessage) && !inputMessage.empty())
         {
-            if (inputMessage == "x" || inputMessage == "X")
+            if (inputMessage == "x")
             {
                 SetConsoleColor(RED);
                 std::cout << "チャットを終了します。\n";
@@ -407,6 +404,52 @@ void ChatLoop(ChatNetwork& chatNetwork)
 
                 break;
             }
+            else if(inputMessage == "1")
+            {
+                SetConsoleColor(RED);
+                std::cout << "入力送信関数送信\n";
+                SetConsoleColor(WHITE);
+
+                auto now = std::chrono::steady_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now.time_since_epoch()).count();
+
+                AnyTime anyTime = { chatNetwork.GetMyClientID(), true, static_cast<DWORD>(ms) };
+                chatNetwork.SendGameInput(anyTime);
+
+                break;
+            }
+            else if (inputMessage == "2")
+            {
+                SetConsoleColor(RED);
+                std::cout << "定期更新送信\n";
+                SetConsoleColor(WHITE);
+
+                Regular regularTest = {
+                static_cast<unsigned int>(chatNetwork.GetMyClientID()),
+                XMFLOAT3(0.0f,0.0f,0.0f),
+                XMFLOAT4(1.0f,1.0f,1.0f,1.0f),
+                XMFLOAT3(2.0f,2.0f,2.0f),
+                XMFLOAT3(3.0f,3.0f,3.0f)
+                };
+
+                chatNetwork.SendRegularUpdate(regularTest);
+
+                break;
+            }
+            else if (inputMessage == "3")
+            {
+                SetConsoleColor(RED);
+                std::cout << "ボイスデータ送信未完成\n";
+                SetConsoleColor(WHITE);
+
+               // chatNetwork.SendVoicePacket();
+
+                break;
+            }
+
+
+
 
             // 通常メッセージ送信
             if (chatNetwork.GetCanSend())
@@ -506,8 +549,6 @@ std::string GetLocalIPAddress()
     WSACleanup();
     return localIp;
 }
-
-
 //----------------------------------------------
 // 同一LAN判定（サブネット先頭3オクテット比較）
 //----------------------------------------------

@@ -56,15 +56,9 @@ struct ClientInfo {
     unsigned short localPort = 0;
     bool isSameLAN = false;     // LAN内判定
     std::string userName;
-    //std::chrono::steady_clock::time_point connectedTime;
     std::chrono::steady_clock::time_point lastHeartbeatTime;
-
-
-
-
-
     ConnectionMode connectionMode = ConnectionMode::Relay; // ★追加
-
+    int clientId = -1;  // ← ★これを追加
 };
 
 
@@ -119,8 +113,8 @@ public:
     // 名前格納
     void SetUserName(const std::string& name);
 
-    void SetConsoleColor(WORD color);
-    void ResetConsoleColor();
+    //void SetConsoleColor(WORD color);
+    //void ResetConsoleColor();
 
     std::string ToBase64(const std::string& input);
     std::string FromBase64(const std::string& input);
@@ -179,6 +173,8 @@ public:
     void StartHostMonitorLoop();
 
     bool GetCanSend() { return m_canSend; }
+
+    int GetMyClientID() {return m_clientId;}
 
 private:
     RakNet::RakPeerInterface* m_peer;
@@ -253,14 +249,18 @@ private:
 
     ConnectionMode m_pendingConnectionMode = ConnectionMode::P2P; // ←追加
 
-        // ==============================
-        // Relay関連ステート
-        // ==============================
-        std::atomic<bool> m_relayReceiverActive = false;   // Relay受信スレッド稼働フラグ
-       // ConnectionMode m_myConnectionMode = ConnectionMode::P2P; // 自分の接続モード(初期はP2P)
+   // ==============================
+   // Relay関連ステート
+   // ==============================
+   std::atomic<bool> m_relayReceiverActive = false;   // Relay受信スレッド稼働フラグ
+   
+   // ユーザー名をキーに、最後の受信時刻を管理
+   std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_lastHeartbeatRelay;
 
-        // ユーザー名をキーに、最後の受信時刻を管理
-        std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_lastHeartbeatRelay;
+
+   int m_nextClientId = 1; // ← クライアントID発行カウンタ
+
+   int m_clientId = -1;//自身がClientのときのみ使用
 };
 
 
