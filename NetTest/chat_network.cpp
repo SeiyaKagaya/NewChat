@@ -886,9 +886,18 @@ void ChatNetwork::StartRelayPollThread(RoomManager& roomManager, const std::stri
                         break;
                     }
 
-                    // 初回リレーを送ってきたクライアントへリレー経由で返信
-                    std::string replyMsg = "relay_ack_from_host:" + std::to_string(m_nextClientId - 1);
-                    RelaySendReplyToServer(info.external_ip, m_userName, replyMsg);
+                    // [保険本来はここで自身のは受け取らないはず] 自分宛てのお返しはスキップ
+                    if (info.external_ip == hostExternalIp)
+                    {
+                        SetConsoleColor(YELLOW);
+                        std::cout << "[Relay] 自分自身(" << info.external_ip << ")へのリレー返信をスキップ\n";
+                        SetConsoleColor(WHITE);
+                    }
+                    else
+                    {
+                        std::string replyMsg = "relay_ack_from_host:" + std::to_string(m_nextClientId - 1);
+                        RelaySendReplyToServer(info.external_ip, m_userName, replyMsg);
+                    }
 
                 }
 
