@@ -22,6 +22,10 @@
 #include <atomic>
 #include <chrono>
 #include <optional>
+#include <IXWebSocket.h>
+
+//#include "Ixwebsocket/include/IXWebSocket.h"
+
 #include <DirectXMath.h>
 using namespace DirectX;
 

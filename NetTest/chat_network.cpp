@@ -285,6 +285,10 @@ bool ChatNetwork::ConnectToHost(const std::string& hostIp, const std::string& ho
             std::cout << "リレー通信のためパンチホールは行いません" << hostIp << ":" << hostPort << std::endl;
             SetConsoleColor(WHITE);
 
+
+            // ホストのハートビート初期値を登録
+            m_lastHeartbeat[m_peer->GetSystemAddressFromIndex(0)] = std::chrono::steady_clock::now();
+
             return true;
         }
         break;
