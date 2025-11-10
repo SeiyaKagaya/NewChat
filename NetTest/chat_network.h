@@ -176,6 +176,36 @@ public:
 
     int GetMyClientID() {return m_clientId;}
 
+
+
+    //websocket
+//-----------------------------[WebSocketまわり]-----------------------------------------
+
+// 初期化
+    void InitWebSocket(const std::string& serverUrl);
+
+    // 停止
+    void StopWebSocket();
+
+
+    // WebSocket受信メッセージ処理
+    void HandleWebSocketMessage(const std::string& msg);
+
+    // 個々のメッセージ要素を処理
+    void ProcessRelayItem(const nlohmann::json& item);
+    
+
+    // RelayAck処理
+    void HandleRelayAck(const std::string& from, const std::string& payload);
+
+    // Relay送信
+    bool RelaySendDataToServerWS(
+        const std::string& hostIp,
+        const std::string& fromName,
+        const std::string& payloadType,
+        const std::string& payload);
+    
+
 private:
     RakNet::RakPeerInterface* m_peer;
     bool m_isHost;
@@ -261,6 +291,12 @@ private:
    int m_nextClientId = 1; // ← クライアントID発行カウンタ
 
    int m_clientId = -1;//自身がClientのときのみ使用
+
+   std::unique_ptr<ix::WebSocket> m_wsRelay;
+   std::thread m_wsThread;
+   bool m_wsActive = false;
+
+
 };
 
 

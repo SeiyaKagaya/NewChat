@@ -79,6 +79,9 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
     m_clientProtocol = protocol;
     if (host) m_hostProtocol = protocol;
 
+
+
+
     // RakNet 起動
     RakNet::SocketDescriptor socketDescriptor(port, bindIp.c_str());
     int maxConnections = host ? 32 : 1;
@@ -1786,3 +1789,262 @@ std::string ChatNetwork::FromBase64(const std::string& input)
 
 
 
+//-----------------------------[WebSocketまわり]-----------------------------------------
+
+// 初期化
+void ChatNetwork::InitWebSocket(const std::string& serverUrl)
+{
+    m_wsRelay = std::make_unique<ix::WebSocket>();
+    m_wsRelay->setUrl(serverUrl);
+
+    m_wsRelay->setOnMessageCallback([this](const ix::WebSocketMessagePtr& msg) {
+        if (msg->type == ix::WebSocketMessageType::Message)
+            HandleWebSocketMessage(msg->str);
+        else if (msg->type == ix::WebSocketMessageType::Close)
+            std::cout << "[WebSocket] 接続が閉じられました\n";
+        else if (msg->type == ix::WebSocketMessageType::Error)
+            std::cerr << "[WebSocket] エラー発生\n";
+        });
+
+    m_wsRelay->start();
+    m_wsActive = true;
+}
+
+// 停止
+void ChatNetwork::StopWebSocket()
+{
+    if (m_wsActive && m_wsRelay)
+    {
+        m_wsRelay->stop();
+        m_wsRelay.reset();
+        m_wsActive = false;
+    }
+}
+
+// WebSocket受信メッセージ処理(要は受信ループ稼働開始)
+void ChatNetwork::HandleWebSocketMessage(const std::string& msg)
+{
+    try {
+        auto json = nlohmann::json::parse(msg);
+
+        // 受信データが配列形式で来る場合を想定(つまり複数の受信が来たら複数動く)
+        if (json.is_array())
+        {
+            for (auto& item : json)
+                ProcessRelayItem(item);
+        }
+        else
+        {
+            ProcessRelayItem(json);
+        }
+    }
+    catch (std::exception& e) {
+        std::cerr << "[WebSocket受信エラー] " << e.what() << std::endl;
+    }
+}
+
+// 個々のメッセージ要素を処理(要は受信ループ)
+void ChatNetwork::ProcessRelayItem(const nlohmann::json& item)
+{
+    std::string from = item.value("user", "");
+    std::string payloadType = item.value("payload_type", "");
+    std::string payload = item.value("payload", "");
+
+    if (payloadType == "chat") {
+        SetConsoleColor(LIGHT_YELLOW);
+        std::cout << "[Relay] " << from << " : " << payload << std::endl;
+        SetConsoleColor(WHITE);
+
+    }
+    else if (payloadType == "input") {
+        SetConsoleColor(LIGHT_YELLOW);
+        std::cout << "[Relay] 入力データ受信 from: " << from << " payload: " << payload << std::endl;
+        SetConsoleColor(WHITE);
+    }
+    else if (payloadType == "regular") {
+        SetConsoleColor(LIGHT_YELLOW);
+        std::cout << "[Relay] 定期更新データ受信 from: " << from << " payload size: " << payload.size() << std::endl;
+        SetConsoleColor(WHITE);
+    }
+    else if (payloadType == "voice")
+    {//ボイス受信
+        std::string decoded = FromBase64(payload);
+        // decoded にPCMデータが入っているので、
+        // ここでPlayPCM(decoded.data(), decoded.size());
+
+        SetConsoleColor(LIGHT_YELLOW);
+        std::cout << "[Relay]クライアントへの更新データ受信 " << from << std::endl;
+        SetConsoleColor(WHITE);
+    }
+    else if (payloadType == "heartbeat")
+    {//心拍受信
+        SetConsoleColor(LIGHT_YELLOW);
+        std::cout << "[Relay]心拍受信 " << from << std::endl;
+        SetConsoleColor(WHITE);
+
+        std::string from = item["user"];
+        // 最終受信時刻更新
+        if (m_isHost)
+        {
+            std::lock_guard<std::mutex> lock(m_clientsMutex);
+            auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                [&](const ClientInfo& c) { return c.userName == from; });
+            if (it != m_clients.end())
+                it->lastHeartbeatTime = std::chrono::steady_clock::now();
+        }
+        else
+        {
+            // ホストから生存信号
+            m_lastHostHeartbeatTime = std::chrono::steady_clock::now();
+        }
+    }
+    else if (payloadType == "leave")
+    {//退出通知
+        // Relay経由の退席通知
+        SetConsoleColor(RED);
+        std::cout << "[Relay] " << from << " が退出しました。\n";
+        SetConsoleColor(WHITE);
+
+        if (m_isHost)
+        {
+            // ---------------------------------------
+            // ホスト側：他のクライアントに転送して通知を共有
+            // ---------------------------------------
+            std::lock_guard<std::mutex> lock(m_clientsMutex);
+
+            // 該当クライアントをリストから削除
+            auto it = std::find_if(m_clients.begin(), m_clients.end(),
+                [&](const ClientInfo& c) { return c.userName == from; });
+
+            if (it != m_clients.end())
+            {
+                std::cout << "[RelayHost] クライアント " << it->userName << " 情報を削除します。\n";
+                m_clients.erase(it);
+            }
+
+            // 他の全クライアントに転送（リレー・P2P両方）
+            for (auto& c : m_clients)
+            {
+                if (c.userName == from) continue;
+
+                switch (c.connectionMode)
+                {
+                case ConnectionMode::Relay:
+                    RelaySendDataToServer(c.externalIp, "system", "leave", from);
+                    break;
+
+                case ConnectionMode::P2P:
+                case ConnectionMode::LocalP2P:
+                {
+                    RakNet::BitStream bs;
+                    bs.Write((RakNet::MessageID)ID_LEAVE_NOTIFICATION);
+                    unsigned int len = static_cast<unsigned int>(from.size());
+                    bs.Write(len);
+                    bs.Write(from.c_str(), len);
+
+                    RakNet::SystemAddress targetAddr;
+                    if (c.connectionMode == ConnectionMode::LocalP2P)
+                        targetAddr.FromStringExplicitPort(c.localIp.c_str(), c.localPort);
+                    else
+                        targetAddr = c.address;
+
+                    m_peer->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED_WITH_ACK_RECEIPT, 2, targetAddr, false);
+                    break;
+                }
+                }
+            }
+        }
+        else
+        {
+            // ---------------------------------------
+            // クライアント側
+            // ---------------------------------------
+            if (from == m_hostIp || from == "host")
+            {
+                // ホストが落ちた場合
+                SetConsoleColor(RED);
+                std::cout << "[Info] ホストが退出しました。Enterで最初に戻ります...\n";
+                SetConsoleColor(WHITE);
+
+                m_forceExit = true;
+                Stop();
+                m_running = false;
+            }
+            else
+            {
+                // 他クライアントが退出した場合
+                SetConsoleColor(RED);
+                std::cout << "[Info] " << from << " が退出しました。\n";
+                SetConsoleColor(WHITE);
+            }
+        }
+    }
+    else if (payloadType == "relay_ack")
+    {//初回リレーのお返しがきた
+        SetConsoleColor(LIGHT_YELLOW);
+        std::cout << "[Relay]初回リレーのお返し受信(relay_ack) " << from << " : " << payload << std::endl;
+        SetConsoleColor(WHITE);
+
+        // ★クライアント番号を抽出
+        int assignedId = -1;
+        if (payload.find("relay_ack_from_host:") == 0) {
+            assignedId = std::stoi(payload.substr(strlen("relay_ack_from_host:")));
+            std::cout << "[Client] 自分のクライアント番号は " << assignedId << " です\n";
+            m_clientId = assignedId;  // ← ChatNetwork に保持させる
+        }
+
+        StartHeartbeatLoop();//クライアント側
+        StartHostMonitorLoop();//ホストの監視開始
+        SetSendOk();
+    }
+}
+
+// RelayAck処理(初回リレー返信)
+void ChatNetwork::HandleRelayAck(const std::string& from, const std::string& payload)
+{
+    SetConsoleColor(LIGHT_YELLOW);
+    std::cout << "[Relay] 初回リレーお返し受信 " << from << " : " << payload << std::endl;
+    SetConsoleColor(WHITE);
+
+    if (payload.find("relay_ack_from_host:") == 0)
+    {
+        int assignedId = std::stoi(payload.substr(strlen("relay_ack_from_host:")));
+        m_clientId = assignedId;
+        std::cout << "[Client] 自分のクライアント番号は " << assignedId << " です\n";
+    }
+
+    StartHeartbeatLoop();
+    StartHostMonitorLoop();
+    SetSendOk();
+}
+
+// Relay送信
+bool ChatNetwork::RelaySendDataToServerWS(
+    const std::string& hostIp,
+    const std::string& fromName,
+    const std::string& payloadType,
+    const std::string& payload)
+{
+    if (!m_wsRelay || !m_wsActive)
+    {
+        std::cerr << "[WebSocketRelay] 送信失敗: 接続が無効\n";
+        return false;
+    }
+
+    nlohmann::json msg;
+    msg["action"] = "relay_send";
+    msg["host_ip"] = hostIp;
+    msg["from"] = fromName;
+    msg["payload_type"] = payloadType;
+    msg["payload"] = payload;
+
+    ix::WebSocketSendInfo info = m_wsRelay->send(msg.dump(), false);
+    if (!info.success)
+    {
+        std::cerr << "[WebSocket送信失敗] payloadSize=" << info.payloadSize << std::endl;
+        return false;
+    }
+
+    std::cout << "[WebSocket送信OK] type=" << payloadType << " from=" << fromName << std::endl;
+    return true;
+}
