@@ -200,10 +200,10 @@ public:
 
     // Relay送信
     bool RelaySendDataToServerWS(
-        const std::string& hostIp,
         const std::string& fromName,
         const std::string& payloadType,
-        const std::string& payload);
+        const std::string& payload,
+        const std::string& target);
     
 
 private:

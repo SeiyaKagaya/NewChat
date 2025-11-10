@@ -82,6 +82,7 @@ bool ChatNetwork::Init(bool host, unsigned short port, const std::string& bindIp
 
 
 
+
     // RakNet 起動
     RakNet::SocketDescriptor socketDescriptor(port, bindIp.c_str());
     int maxConnections = host ? 32 : 1;
@@ -1846,7 +1847,15 @@ void ChatNetwork::HandleWebSocketMessage(const std::string& msg)
 // 個々のメッセージ要素を処理(要は受信ループ)
 void ChatNetwork::ProcessRelayItem(const nlohmann::json& item)
 {
-    std::string from = item.value("user", "");
+    std::string from = item.value("from", "");  // 送信者
+    std::string target = item.value("target", "all"); // 宛先
+
+    // ★自分自身の送信は無視
+    if (from == m_userName) return;
+
+    // 宛先が自分じゃない場合も無視
+    if (target != "all" && target != m_userName) return;
+
     std::string payloadType = item.value("payload_type", "");
     std::string payload = item.value("payload", "");
 
@@ -2020,23 +2029,19 @@ void ChatNetwork::HandleRelayAck(const std::string& from, const std::string& pay
 
 // Relay送信
 bool ChatNetwork::RelaySendDataToServerWS(
-    const std::string& hostIp,
     const std::string& fromName,
     const std::string& payloadType,
-    const std::string& payload)
+    const std::string& payload,
+    const std::string& target)   // "all" or 個別クライアント名
 {
-    if (!m_wsRelay || !m_wsActive)
-    {
-        std::cerr << "[WebSocketRelay] 送信失敗: 接続が無効\n";
-        return false;
-    }
+    if (!m_wsRelay || !m_wsActive) return false;
 
     nlohmann::json msg;
     msg["action"] = "relay_send";
-    msg["host_ip"] = hostIp;
     msg["from"] = fromName;
     msg["payload_type"] = payloadType;
     msg["payload"] = payload;
+    msg["target"] = target;
 
     ix::WebSocketSendInfo info = m_wsRelay->send(msg.dump(), false);
     if (!info.success)
@@ -2045,6 +2050,8 @@ bool ChatNetwork::RelaySendDataToServerWS(
         return false;
     }
 
-    std::cout << "[WebSocket送信OK] type=" << payloadType << " from=" << fromName << std::endl;
+    std::cout << "[WebSocket送信OK] type=" << payloadType
+        << " from=" << fromName
+        << " target=" << target << std::endl;
     return true;
 }
