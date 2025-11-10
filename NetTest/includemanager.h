@@ -22,9 +22,6 @@
 #include <atomic>
 #include <chrono>
 #include <optional>
-#include <IXWebSocket.h>
-
-//#include "Ixwebsocket/include/IXWebSocket.h"
 
 #include <DirectXMath.h>
 using namespace DirectX;
@@ -42,10 +39,16 @@ using namespace DirectX;
 #pragma comment(lib, "RakNetDLL.lib")
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "ixwebsocket.lib")
 
 
 #define popen _popen
 #define pclose _pclose
+
+
+#include <IXNetSystem.h>
+#include <IXWebSocket.h>
+
 
 
 
